@@ -18,8 +18,8 @@ import java.util.Set;
 
 /**
  * First-pass Odin / Android gamepad bridge.
- * Sends keyboard and pointer events into WebView so that Ruffle sees the
- * same inputs as the original Flash game. Does not change direct touch input.
+ * Sends keyboard events to WebView and a single virtual mouse stream to
+ * Ruffle's canvas. Direct touchscreen input remains unchanged.
  */
 final class GamepadBridge {
     private static final String TAG = "ArcaneGamepad";
@@ -38,7 +38,7 @@ final class GamepadBridge {
     private boolean r1, r2, triggerAxis, attacking;
     private boolean pointerInitialized, loopRunning;
     private float pointerX, pointerY, aimX, aimY;
-    private long attackDownTime, lastFrameTime, lastScriptAimTime;
+    private long lastFrameTime, lastScriptAimTime;
 
     GamepadBridge(Activity activity, WebView view) {
         webView = view;
@@ -175,33 +175,26 @@ final class GamepadBridge {
         cursor.invalidate();
     }
 
-    private void sendPointer(int action) {
+    private void sendVirtualPointer(boolean isAttackChange) {
         initializePointer();
-        if (!pointerInitialized) return;
-        long now = SystemClock.uptimeMillis();
-        if (action == MotionEvent.ACTION_DOWN) attackDownTime = now;
-        MotionEvent event = MotionEvent.obtain(
-            attackDownTime, now, action, pointerX, pointerY, 0);
-        event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        webView.dispatchTouchEvent(event);
-        event.recycle();
-    }
-
-    private void sendHover() {
-        if (!pointerInitialized) return;
-        long now = SystemClock.uptimeMillis();
-        MotionEvent event = MotionEvent.obtain(now, now, MotionEvent.ACTION_HOVER_MOVE,
-            pointerX, pointerY, 0);
-        event.setSource(InputDevice.SOURCE_MOUSE);
-        webView.dispatchGenericMotionEvent(event);
-        event.recycle();
+        if (!pointerInitialized || webView.getWidth() <= 0 || webView.getHeight() <= 0) return;
+        float nx = pointerX / webView.getWidth();
+        float ny = pointerY / webView.getHeight();
+        String function = isAttackChange ? "arcaneControllerAttack" : "arcaneControllerAim";
+        String args = isAttackChange
+            ? nx + "," + ny + "," + attacking
+            : nx + "," + ny;
+        webView.evaluateJavascript(
+            "if(window." + function + ")window." + function + "(" + args + ");", null);
     }
 
     private void updateAttack() {
         boolean desired = r1 || r2 || triggerAxis;
         if (desired == attacking) return;
         attacking = desired;
-        sendPointer(desired ? MotionEvent.ACTION_DOWN : MotionEvent.ACTION_UP);
+        // Do not send a separate Android touchscreen event: it moves
+        // Flash's mouse away from the right-stick aim.
+        sendVirtualPointer(true);
     }
 
     private final Runnable aimLoop = new Runnable() {
@@ -216,25 +209,14 @@ final class GamepadBridge {
                 long now = SystemClock.uptimeMillis();
                 float dt = Math.min((now - lastFrameTime) / 1000f, 0.05f);
                 lastFrameTime = now;
-                float speed = Math.min(webView.getWidth(), webView.getHeight() * 4f / 3f) * 0.9f;
+                float speed = Math.min(webView.getWidth(), webView.getHeight() * 4f / 3f) * 1.55f;
                 pointerX += aimX * speed * dt;
                 pointerY += aimY * speed * dt;
                 clampPointer();
-                if (attacking) {
-                    sendPointer(MotionEvent.ACTION_MOVE);
-                } else {
-                    // Android WebView's native hover may move our cursor while
-                    // Ruffle misses the actual mousemove event. Inject a
-                    // pointermove directly into the player as well.
-                    sendHover();
-                    if (now - lastScriptAimTime >= 32L) {
-                        lastScriptAimTime = now;
-                        float nx = pointerX / Math.max(1, webView.getWidth());
-                        float ny = pointerY / Math.max(1, webView.getHeight());
-                        webView.evaluateJavascript(
-                            "if(window.arcaneControllerAim)window.arcaneControllerAim(" +
-                            nx + "," + ny + ");", null);
-                    }
+                // Keep the same mouse coordinates while aiming and attacking.
+                if (now - lastScriptAimTime >= 24L) {
+                    lastScriptAimTime = now;
+                    sendVirtualPointer(false);
                 }
             }
             webView.postOnAnimation(this);
@@ -252,7 +234,7 @@ final class GamepadBridge {
         r1 = r2 = triggerAxis = false;
         if (attacking) {
             attacking = false;
-            sendPointer(MotionEvent.ACTION_UP);
+            sendVirtualPointer(true);
         }
         for (int code : new HashSet<>(pressedKeys)) setKey(code, false);
     }
