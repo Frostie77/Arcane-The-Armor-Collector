@@ -32,13 +32,28 @@ final class GamepadBridge {
     // scene change or touch. This recovers a key release lost by Ruffle.
     private static final long NEUTRAL_KEY_RECOVERY_MS = 180L;
     private final WebView webView;
+    static final String[] ACTION_NAMES = {
+        "Attack", "Alternate Attack", "Switch Weapon", "Swap Armour",
+        "Throw", "Previous Throwable", "Next Throwable"
+    };
+    private static final int[] DEFAULT_BUTTONS = {
+        KeyEvent.KEYCODE_BUTTON_R2, KeyEvent.KEYCODE_BUTTON_R1,
+        KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
+        KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y,
+        KeyEvent.KEYCODE_BUTTON_L1
+    };
+    private final int[] bindings = DEFAULT_BUTTONS.clone();
+    private final Set<Integer> hardwareButtonsDown = new HashSet<>();
+    private boolean rightTriggerAxisDown, leftTriggerAxisDown;
+    private boolean invertAimY;
+    private float aimSensitivity = 0.9f;
     final Cursor cursor;
 
     private final Set<Integer> pressedKeys = new HashSet<>();
     private boolean keyUp, keyDown, keyLeft, keyRight;
     private boolean stickUp, stickDown, stickLeft, stickRight;
     private boolean hatUp, hatDown, hatLeft, hatRight;
-    private boolean r1, r2, triggerAxis, attacking;
+    private boolean attacking;
     private boolean pointerInitialized, loopRunning, neutralRecoveryQueued, wasMoving;
     private boolean widescreenDisplay;
     private float pointerX, pointerY, aimX, aimY;
@@ -47,6 +62,55 @@ final class GamepadBridge {
     GamepadBridge(Activity activity, WebView view) {
         webView = view;
         cursor = new Cursor(activity);
+    }
+
+    static boolean canBindButton(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_BUTTON_A: case KeyEvent.KEYCODE_BUTTON_B:
+            case KeyEvent.KEYCODE_BUTTON_X: case KeyEvent.KEYCODE_BUTTON_Y:
+            case KeyEvent.KEYCODE_BUTTON_L1: case KeyEvent.KEYCODE_BUTTON_R1:
+            case KeyEvent.KEYCODE_BUTTON_L2: case KeyEvent.KEYCODE_BUTTON_R2:
+            case KeyEvent.KEYCODE_BUTTON_THUMBL: case KeyEvent.KEYCODE_BUTTON_THUMBR:
+                return true;
+            default: return false;
+        }
+    }
+
+    static String buttonName(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_BUTTON_A: return "A";
+            case KeyEvent.KEYCODE_BUTTON_B: return "B";
+            case KeyEvent.KEYCODE_BUTTON_X: return "X";
+            case KeyEvent.KEYCODE_BUTTON_Y: return "Y";
+            case KeyEvent.KEYCODE_BUTTON_L1: return "L1";
+            case KeyEvent.KEYCODE_BUTTON_R1: return "R1";
+            case KeyEvent.KEYCODE_BUTTON_L2: return "L2";
+            case KeyEvent.KEYCODE_BUTTON_R2: return "R2";
+            case KeyEvent.KEYCODE_BUTTON_THUMBL: return "L3";
+            case KeyEvent.KEYCODE_BUTTON_THUMBR: return "R3";
+            default: return "Unknown";
+        }
+    }
+
+    static int defaultButton(int action) { return DEFAULT_BUTTONS[action]; }
+    int getButton(int action) { return bindings[action]; }
+
+    void setButton(int action, int code) {
+        if (action < 0 || action >= bindings.length || !canBindButton(code)) return;
+        int oldCode = bindings[action];
+        if (oldCode == code) return;
+        // Swap conflicting assignments rather than mapping two actions
+        // onto one physical button.
+        for (int i = 0; i < bindings.length; i++) {
+            if (i != action && bindings[i] == code) bindings[i] = oldCode;
+        }
+        bindings[action] = code;
+        release();
+    }
+
+    void setAimOptions(boolean invert, float sensitivity) {
+        invertAimY = invert;
+        aimSensitivity = Math.max(0.4f, Math.min(2.0f, sensitivity));
     }
 
     boolean handleKey(KeyEvent event) {
@@ -63,14 +127,12 @@ final class GamepadBridge {
             case KeyEvent.KEYCODE_DPAD_DOWN: keyDown = down; updateMovement(); return true;
             case KeyEvent.KEYCODE_DPAD_LEFT: keyLeft = down; updateMovement(); return true;
             case KeyEvent.KEYCODE_DPAD_RIGHT: keyRight = down; updateMovement(); return true;
-            case KeyEvent.KEYCODE_BUTTON_A: setKey(KeyEvent.KEYCODE_SPACE, down); return true;
-            case KeyEvent.KEYCODE_BUTTON_B: setKey(KeyEvent.KEYCODE_B, down); return true;
-            case KeyEvent.KEYCODE_BUTTON_X: setKey(KeyEvent.KEYCODE_E, down); return true;
-            case KeyEvent.KEYCODE_BUTTON_Y: setKey(KeyEvent.KEYCODE_R, down); return true;
-            case KeyEvent.KEYCODE_BUTTON_L1: setKey(KeyEvent.KEYCODE_T, down); return true;
-            case KeyEvent.KEYCODE_BUTTON_R1: r1 = down; updateAttack(); return true;
-            case KeyEvent.KEYCODE_BUTTON_R2: r2 = down; updateAttack(); return true;
-            default: return false;
+            default:
+                if (!canBindButton(event.getKeyCode())) return false;
+                if (down) hardwareButtonsDown.add(event.getKeyCode());
+                else hardwareButtonsDown.remove(event.getKeyCode());
+                updateMappedButtons();
+                return true;
         }
     }
 
@@ -126,9 +188,11 @@ final class GamepadBridge {
             webView.postOnAnimation(aimLoop);
         }
 
-        triggerAxis = Math.max(event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
+        rightTriggerAxisDown = Math.max(event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
             event.getAxisValue(MotionEvent.AXIS_GAS)) > 0.5f;
-        updateAttack();
+        leftTriggerAxisDown = Math.max(event.getAxisValue(MotionEvent.AXIS_LTRIGGER),
+            event.getAxisValue(MotionEvent.AXIS_BRAKE)) > 0.5f;
+        updateMappedButtons();
         return true;
     }
 
@@ -268,11 +332,23 @@ final class GamepadBridge {
         event.recycle();
     }
 
-    private void updateAttack() {
-        boolean desired = r1 || r2 || triggerAxis;
-        if (desired == attacking) return;
-        attacking = desired;
-        sendPointer(desired ? MotionEvent.ACTION_DOWN : MotionEvent.ACTION_UP);
+    private boolean isButtonDown(int code) {
+        return hardwareButtonsDown.contains(code) ||
+            (code == KeyEvent.KEYCODE_BUTTON_R2 && rightTriggerAxisDown) ||
+            (code == KeyEvent.KEYCODE_BUTTON_L2 && leftTriggerAxisDown);
+    }
+
+    private void updateMappedButtons() {
+        setKey(KeyEvent.KEYCODE_SPACE, isButtonDown(bindings[2]));
+        setKey(KeyEvent.KEYCODE_B, isButtonDown(bindings[3]));
+        setKey(KeyEvent.KEYCODE_E, isButtonDown(bindings[4]));
+        setKey(KeyEvent.KEYCODE_R, isButtonDown(bindings[5]));
+        setKey(KeyEvent.KEYCODE_T, isButtonDown(bindings[6]));
+        boolean desired = isButtonDown(bindings[0]) || isButtonDown(bindings[1]);
+        if (desired != attacking) {
+            attacking = desired;
+            sendPointer(desired ? MotionEvent.ACTION_DOWN : MotionEvent.ACTION_UP);
+        }
     }
 
     private final Runnable aimLoop = new Runnable() {
@@ -287,9 +363,9 @@ final class GamepadBridge {
                 long now = SystemClock.uptimeMillis();
                 float dt = Math.min((now - lastFrameTime) / 1000f, 0.05f);
                 lastFrameTime = now;
-                float speed = Math.min(webView.getWidth(), webView.getHeight() * 4f / 3f) * 0.9f;
+                float speed = Math.min(webView.getWidth(), webView.getHeight() * 4f / 3f) * aimSensitivity;
                 pointerX += aimX * speed * dt;
-                pointerY += aimY * speed * dt;
+                pointerY += (invertAimY ? -aimY : aimY) * speed * dt;
                 clampPointer();
                 if (attacking) {
                     sendPointer(MotionEvent.ACTION_MOVE);
@@ -323,7 +399,8 @@ final class GamepadBridge {
         keyUp = keyDown = keyLeft = keyRight = false;
         stickUp = stickDown = stickLeft = stickRight = false;
         hatUp = hatDown = hatLeft = hatRight = false;
-        r1 = r2 = triggerAxis = false;
+        hardwareButtonsDown.clear();
+        rightTriggerAxisDown = leftTriggerAxisDown = false;
         if (attacking) {
             attacking = false;
             sendPointer(MotionEvent.ACTION_UP);
