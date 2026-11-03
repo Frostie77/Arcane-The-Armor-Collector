@@ -99,6 +99,7 @@ public class MainActivity extends Activity {
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) setImmersive();
+        else if (gamepad != null) gamepad.release();
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (gamepad != null && gamepad.handleKey(event)) return true;
