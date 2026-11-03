@@ -68,7 +68,7 @@ let arcaneLastPointerDiagnostic = 0;
 const arcaneInstrumentedCanvases = new WeakSet();
 let arcaneWarnedNoCanvas = false;
 window.arcaneControllerAim = (nx, ny) => {
-  if (!arcanePlayer || arcaneInBackground) return;
+  if (!arcanePlayer || arcaneInBackground || arcaneMenuPaused) return;
   const shadow = arcanePlayer.shadowRoot;
   const canvases = shadow ? Array.from(shadow.querySelectorAll('canvas')) : [];
   const canvas = canvases
@@ -194,22 +194,49 @@ window.arcaneClearMovementKeys = () => {
     console.warn('ArcaneMovementRecovery: failed', error);
   }
 };
-// Suspend Flash execution AND sound whenever the Android app is backgrounded.
+// Pause Flash execution and sound while the options overlay is visible
+// OR Android backgrounds the activity. Either reason independently keeps
+// Ruffle paused, so returning to the app never resumes an open pause menu.
 let arcanePlayer = null;
 let arcaneInBackground = false;
+let arcaneMenuPaused = false;
+let arcaneRufflePaused = false;
+const arcaneSyncPausedState = () => {
+  const shouldPause = arcaneInBackground || arcaneMenuPaused;
+  if (!arcanePlayer || shouldPause === arcaneRufflePaused) return;
+  try {
+    if (shouldPause) arcanePlayer.ruffle().suspend();
+    else arcanePlayer.ruffle().resume();
+    arcaneRufflePaused = shouldPause;
+  } catch (e) {
+    try {
+      if (shouldPause && typeof arcanePlayer.pause === 'function') arcanePlayer.pause();
+      else if (!shouldPause && typeof arcanePlayer.play === 'function') arcanePlayer.play();
+      arcaneRufflePaused = shouldPause;
+    } catch (fallbackError) {
+      console.warn('Arcane pause failed', fallbackError);
+    }
+  }
+};
 window.arcaneSuspend = () => {
   arcaneInBackground = true;
-  if (arcanePlayer) {
-    try { arcanePlayer.ruffle().suspend(); }
-    catch (e) { if (typeof arcanePlayer.pause === 'function') arcanePlayer.pause(); }
-  }
+  arcaneSyncPausedState();
 };
 window.arcaneResume = () => {
   arcaneInBackground = false;
-  if (arcanePlayer) {
-    try { arcanePlayer.ruffle().resume(); }
-    catch (e) { if (typeof arcanePlayer.play === 'function') arcanePlayer.play(); }
-  }
+  arcaneSyncPausedState();
+};
+window.arcaneSetMenuPaused = (paused) => {
+  const next = !!paused;
+  if (next === arcaneMenuPaused) return;
+  // Clear held movement before suspending, then once again when resuming.
+  if (next && typeof window.arcaneClearMovementKeys === 'function')
+    window.arcaneClearMovementKeys();
+  arcaneMenuPaused = next;
+  arcaneSyncPausedState();
+  if (!next && !arcaneInBackground && typeof window.arcaneClearMovementKeys === 'function')
+    window.arcaneClearMovementKeys();
+  console.info('ArcaneOptions: ' + (next ? 'paused' : 'resumed'));
 };
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) window.arcaneSuspend();
@@ -226,6 +253,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('game').appendChild(player);
     await player.ruffle().load({ url: 'arcane.swf' });
     if (arcaneInBackground || document.hidden) window.arcaneSuspend();
+    else arcaneSyncPausedState();
     status.remove();
     player.focus();
   } catch(e) {
