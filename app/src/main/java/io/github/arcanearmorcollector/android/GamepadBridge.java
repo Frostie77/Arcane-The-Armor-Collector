@@ -184,13 +184,13 @@ final class GamepadBridge {
                 pressedKeys.remove(key);
                 dispatchTranslatedKey(key, false);
             }
-            // Deliver a second, player-targeted key-up after movement
-            // returns to neutral. Never send recovery key-down events:
-            // they can make the character jump unexpectedly.
+            // Recover stale A/S/D movement with player-targeted taps.
+            // Arcane uses W to jump, so the web recovery sends W key-up
+            // only and never presses W at the end of a movement.
             webView.evaluateJavascript(
                 "if(window.arcaneClearMovementKeys)window.arcaneClearMovementKeys();",
                 null);
-            Log.d(TAG, "movement-neutral: forced WASD release + Ruffle reset");
+            Log.d(TAG, "movement-neutral: WASD release + Ruffle non-jump reset");
         }
     };
 
