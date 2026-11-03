@@ -140,7 +140,9 @@ public class MainActivity extends Activity {
             gameView.resumeTimers();
             gameView.onResume();
             gameView.evaluateJavascript(
-                "if (window.arcaneResume) window.arcaneResume();", null);
+                "if (window.arcaneResume) window.arcaneResume();" +
+                "if (window.arcaneClearMovementKeys) window.arcaneClearMovementKeys();",
+                null);
         }
     }
     @Override public void onDestroy() {
