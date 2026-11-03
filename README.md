@@ -32,6 +32,12 @@ The recommended repository is `Arcane-Armor-Collector-Android`. `arcane.swf` is 
 Ruffle: https://ruffle.rs (MIT/Apache-2.0; preserve upstream notices if you redistribute its runtime).
 Android WebViewAssetLoader: https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader
 
+## Background audio and app lifecycle
+
+The Android wrapper now explicitly suspends Ruffle (including its sounds) when the app is backgrounded and resumes on return. It also pauses/resumes WebView timers and destroys the WebView on exit. This still needs verification on the Odin: start a fight, press Home, confirm the music stops, return, then close the app from Recent Apps.
+
+The custom Android icon is supplied as a separate local asset pack; it is not included in this source-only repository.
+
 ## Known limitations
 
 - Ruffle desktop compatibility doesn't guarantee WebView compatibility.
