@@ -39,7 +39,7 @@ final class GamepadBridge {
     private boolean stickUp, stickDown, stickLeft, stickRight;
     private boolean hatUp, hatDown, hatLeft, hatRight;
     private boolean r1, r2, triggerAxis, attacking;
-    private boolean pointerInitialized, loopRunning, neutralRecoveryQueued;
+    private boolean pointerInitialized, loopRunning, neutralRecoveryQueued, wasMoving;
     private float pointerX, pointerY, aimX, aimY;
     private long attackDownTime, lastFrameTime, lastScriptAimTime;
 
@@ -160,7 +160,7 @@ final class GamepadBridge {
         // one unconditional set of releases even if our local cache already
         // believes the keys are up.
         if (!up && !down && !left && !right) {
-            if (!neutralRecoveryQueued) {
+            if (wasMoving && !neutralRecoveryQueued) {
                 neutralRecoveryQueued = true;
                 webView.postDelayed(neutralMovementRecovery, NEUTRAL_KEY_RECOVERY_MS);
             }
@@ -168,6 +168,7 @@ final class GamepadBridge {
             webView.removeCallbacks(neutralMovementRecovery);
             neutralRecoveryQueued = false;
         }
+        wasMoving = up || down || left || right;
     }
 
     private final Runnable neutralMovementRecovery = new Runnable() {
@@ -300,6 +301,7 @@ final class GamepadBridge {
     void release() {
         webView.removeCallbacks(neutralMovementRecovery);
         neutralRecoveryQueued = false;
+        wasMoving = false;
         aimX = aimY = 0;
         loopRunning = false;
         lastScriptAimTime = 0;
