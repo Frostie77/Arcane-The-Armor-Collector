@@ -102,6 +102,20 @@ window.arcaneControllerAim = (nx, ny) => {
       console.info('Arcane controller: aiming at Ruffle canvas');
     }
     const synthetic = new PointerEvent('pointermove', options);
+    // Android WebView reports offsetX/Y for synthetic PointerEvents in
+    // a different scale than for genuine touch events. Ruffle reads
+    // offsetX/Y, not clientX/Y. Supply canvas-local CSS coordinates
+    // explicitly to make stick aim and R2 use identical game positions.
+    const localX = x - r.left;
+    const localY = y - r.top;
+    try {
+      Object.defineProperties(synthetic, {
+        offsetX: { configurable: true, value: localX },
+        offsetY: { configurable: true, value: localY }
+      });
+    } catch (error) {
+      console.warn('Arcane controller: could not normalize pointer offsets', error);
+    }
     canvas.dispatchEvent(synthetic);
     if (Date.now() - arcaneLastAimDiagnostic > 1000) {
       arcaneLastAimDiagnostic = Date.now();
@@ -109,6 +123,7 @@ window.arcaneControllerAim = (nx, ny) => {
         '(' + x.toFixed(1) + ',' + y.toFixed(1) + ')' +
         ' offset=(' + synthetic.offsetX.toFixed(1) +
         ',' + synthetic.offsetY.toFixed(1) + ')' +
+        ' targetOffset=(' + localX.toFixed(1) + ',' + localY.toFixed(1) + ')' +
         ' canvasRect=(' + r.left.toFixed(1) + ',' + r.top.toFixed(1) +
         ',' + r.width.toFixed(1) + ',' + r.height.toFixed(1) + ')');
     }
