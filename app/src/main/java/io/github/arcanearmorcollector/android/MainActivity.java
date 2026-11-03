@@ -84,8 +84,11 @@ public class MainActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.addView(gameView, new FrameLayout.LayoutParams(-1, -1));
         gamepad = new GamepadBridge(this, gameView);
-        // The game's own reticle is the only visible aiming cursor.
-        // We keep the bridge's pointer position internally, but don't draw a second crosshair.
+        // Always show the controller's aiming guide. Some Arcane scenes
+        // hide the Flash cursor, but the native guide remains visible.
+        gamepad.cursor.setClickable(false);
+        gamepad.cursor.setFocusable(false);
+        root.addView(gamepad.cursor, new FrameLayout.LayoutParams(-1, -1));
         setContentView(root);
         gameView.requestFocus();
         gameView.loadUrl(ORIGIN + "/assets/index.html");
