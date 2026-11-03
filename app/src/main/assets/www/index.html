@@ -25,6 +25,30 @@ window.RufflePlayer.config = {
   allowNetworking: 'none',
   publicPath: 'ruffle/'
 };
+// Right-stick aiming from Android. Native WebView hover events do not always
+// reach Ruffle, so deliver pointer motion to Ruffle's player directly.
+// Coordinates are normalized against the Android WebView; map them into the
+// browser viewport, including any 4:3 letterboxing.
+window.arcaneControllerAim = (nx, ny) => {
+  if (!arcanePlayer || arcaneInBackground) return;
+  const x = Math.max(0, Math.min(window.innerWidth - 1, nx * window.innerWidth));
+  const y = Math.max(0, Math.min(window.innerHeight - 1, ny * window.innerHeight));
+  const player = arcanePlayer;
+  if (typeof PointerEvent === 'function') {
+    player.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true, composed: true, cancelable: true,
+      pointerType: 'mouse', pointerId: 10, isPrimary: true,
+      clientX: x, clientY: y, screenX: x, screenY: y,
+      button: -1, buttons: 0, pressure: 0
+    }));
+  } else {
+    player.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true, composed: true, cancelable: true,
+      clientX: x, clientY: y, screenX: x, screenY: y,
+      button: 0, buttons: 0
+    }));
+  }
+};
 // Suspend Flash execution AND sound whenever the Android app is backgrounded.
 let arcanePlayer = null;
 let arcaneInBackground = false;
