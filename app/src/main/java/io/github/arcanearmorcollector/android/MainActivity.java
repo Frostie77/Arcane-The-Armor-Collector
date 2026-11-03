@@ -46,8 +46,8 @@ public class MainActivity extends Activity {
     private String displayMode = "original";
     private boolean invertAimY;
     private int aimSpeedIndex = 1;
-    private static final String[] DISPLAY_MODES = {"original", "fill", "stretch"};
-    private static final String[] DISPLAY_NAMES = {"Original 4:3", "Fill Screen", "Stretch to Screen"};
+    private static final String[] DISPLAY_MODES = {"original", "stretch"};
+    private static final String[] DISPLAY_NAMES = {"Original 4:3", "Stretch to Screen"};
     private static final float[] AIM_SPEEDS = {0.6f, 0.9f, 1.2f, 1.5f, 1.8f};
     private static final String ORIGIN = "https://appassets.androidplatform.net";
 
@@ -55,6 +55,12 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         SharedPreferences prefs = getPreferences(MODE_PRIVATE);
         displayMode = prefs.getString("display_mode", "original");
+        // Old "fill" crops the playfield on widescreen handhelds.
+        // Migrate anyone who selected it to the usable stretched mode.
+        if ("fill".equals(displayMode)) {
+            displayMode = "stretch";
+            prefs.edit().putString("display_mode", displayMode).apply();
+        }
         if (displayModeIndex() < 0) displayMode = "original";
         invertAimY = prefs.getBoolean("invert_aim_y", false);
         aimSpeedIndex = prefs.getInt("aim_speed", 1);
@@ -434,8 +440,7 @@ public class MainActivity extends Activity {
             int mode = Math.max(0, displayModeIndex());
             addOptionRow(rows, scroll, "Display Mode: " + DISPLAY_NAMES[mode],
                 mode == 0 ? "Original image with black side bars" :
-                mode == 1 ? "Cropped edges, correct proportions" :
-                "Stretched to fit the entire display", 1);
+                "Entire game visible across the widescreen display", 1);
             addOptionRow(rows, scroll, "Controller Settings", "Remap buttons and adjust aiming", 2);
         } else {
             addOptionRow(rows, scroll, "Back to Options", "", 0);
