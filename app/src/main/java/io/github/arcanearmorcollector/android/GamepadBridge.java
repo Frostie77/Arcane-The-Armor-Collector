@@ -36,6 +36,7 @@ final class GamepadBridge {
         "Attack", "Alternate Attack", "Switch Weapon", "Swap Armour",
         "Throw", "Previous Throwable", "Next Throwable"
     };
+    static final int UNMAPPED = -1;
     private static final int[] DEFAULT_BUTTONS = {
         KeyEvent.KEYCODE_BUTTON_R2, KeyEvent.KEYCODE_BUTTON_R1,
         KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
@@ -78,6 +79,7 @@ final class GamepadBridge {
 
     static String buttonName(int code) {
         switch (code) {
+            case UNMAPPED: return "Unmapped";
             case KeyEvent.KEYCODE_BUTTON_A: return "A";
             case KeyEvent.KEYCODE_BUTTON_B: return "B";
             case KeyEvent.KEYCODE_BUTTON_X: return "X";
@@ -96,15 +98,23 @@ final class GamepadBridge {
     int getButton(int action) { return bindings[action]; }
 
     void setButton(int action, int code) {
-        if (action < 0 || action >= bindings.length || !canBindButton(code)) return;
-        int oldCode = bindings[action];
-        if (oldCode == code) return;
-        // Swap conflicting assignments rather than mapping two actions
-        // onto one physical button.
-        for (int i = 0; i < bindings.length; i++) {
-            if (i != action && bindings[i] == code) bindings[i] = oldCode;
+        if (action < 0 || action >= bindings.length ||
+            (code != UNMAPPED && !canBindButton(code))) return;
+        if (bindings[action] == code) return;
+        // Taking an assigned button leaves the old action unmapped.
+        // Never silently swap the displaced action onto another button.
+        if (code != UNMAPPED) {
+            for (int i = 0; i < bindings.length; i++) {
+                if (i != action && bindings[i] == code)
+                    bindings[i] = UNMAPPED;
+            }
         }
         bindings[action] = code;
+        release();
+    }
+
+    void resetButtons() {
+        System.arraycopy(DEFAULT_BUTTONS, 0, bindings, 0, DEFAULT_BUTTONS.length);
         release();
     }
 
