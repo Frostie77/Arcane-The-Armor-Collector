@@ -28,6 +28,9 @@ final class GamepadBridge {
     // This reduces ghost movement from analogue stick drift and axis noise.
     private static final float MOVE_ON = 0.38f;
     private static final float MOVE_OFF = 0.22f;
+    // Re-send a neutral key-up after the WebView has had time to process a
+    // scene change or touch. This recovers a key release lost by Ruffle.
+    private static final long NEUTRAL_KEY_RECOVERY_MS = 180L;
     private final WebView webView;
     final Cursor cursor;
 
@@ -36,7 +39,7 @@ final class GamepadBridge {
     private boolean stickUp, stickDown, stickLeft, stickRight;
     private boolean hatUp, hatDown, hatLeft, hatRight;
     private boolean r1, r2, triggerAxis, attacking;
-    private boolean pointerInitialized, loopRunning;
+    private boolean pointerInitialized, loopRunning, neutralRecoveryQueued;
     private float pointerX, pointerY, aimX, aimY;
     private long attackDownTime, lastFrameTime, lastScriptAimTime;
 
@@ -76,6 +79,10 @@ final class GamepadBridge {
 
         float leftX = event.getAxisValue(MotionEvent.AXIS_X);
         float leftY = event.getAxisValue(MotionEvent.AXIS_Y);
+        boolean priorStickUp = stickUp, priorStickDown = stickDown;
+        boolean priorStickLeft = stickLeft, priorStickRight = stickRight;
+        boolean priorHatUp = hatUp, priorHatDown = hatDown;
+        boolean priorHatLeft = hatLeft, priorHatRight = hatRight;
         stickLeft = movementActive(-leftX, stickLeft);
         stickRight = movementActive(leftX, stickRight);
         stickUp = movementActive(-leftY, stickUp);
@@ -87,6 +94,16 @@ final class GamepadBridge {
         hatRight = hx > 0.5f;
         hatUp = hy < -0.5f;
         hatDown = hy > 0.5f;
+        if (priorStickUp != stickUp || priorStickDown != stickDown ||
+            priorStickLeft != stickLeft || priorStickRight != stickRight ||
+            priorHatUp != hatUp || priorHatDown != hatDown ||
+            priorHatLeft != hatLeft || priorHatRight != hatRight) {
+            Log.d(TAG, "movement-axis x=" + leftX + " y=" + leftY +
+                " hatX=" + hx + " hatY=" + hy +
+                " stick[U,D,L,R]=" + stickUp + "," + stickDown + "," +
+                stickLeft + "," + stickRight + " hat=" +
+                hatUp + "," + hatDown + "," + hatLeft + "," + hatRight);
+        }
         updateMovement();
 
         // Most Android controllers use Z/RZ for the right stick;
@@ -137,12 +154,47 @@ final class GamepadBridge {
         if (down) setKey(KeyEvent.KEYCODE_S, true);
         if (left) setKey(KeyEvent.KEYCODE_A, true);
         if (right) setKey(KeyEvent.KEYCODE_D, true);
+
+        // Ruffle can miss key-up when a touch (R2) changes focus or when the
+        // Flash scene changes. Once every movement source is neutral, send
+        // one unconditional set of releases even if our local cache already
+        // believes the keys are up.
+        if (!up && !down && !left && !right) {
+            if (!neutralRecoveryQueued) {
+                neutralRecoveryQueued = true;
+                webView.postDelayed(neutralMovementRecovery, NEUTRAL_KEY_RECOVERY_MS);
+            }
+        } else if (neutralRecoveryQueued) {
+            webView.removeCallbacks(neutralMovementRecovery);
+            neutralRecoveryQueued = false;
+        }
     }
+
+    private final Runnable neutralMovementRecovery = new Runnable() {
+        @Override public void run() {
+            neutralRecoveryQueued = false;
+            if (keyUp || keyDown || keyLeft || keyRight ||
+                stickUp || stickDown || stickLeft || stickRight ||
+                hatUp || hatDown || hatLeft || hatRight) return;
+            for (int key : new int[] {
+                KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_A,
+                KeyEvent.KEYCODE_S, KeyEvent.KEYCODE_D
+            }) {
+                pressedKeys.remove(key);
+                dispatchTranslatedKey(key, false);
+            }
+            Log.d(TAG, "movement-neutral: forced WASD release");
+        }
+    };
 
     private void setKey(int code, boolean down) {
         if (pressedKeys.contains(code) == down) return;
         if (down) pressedKeys.add(code);
         else pressedKeys.remove(code);
+        dispatchTranslatedKey(code, down);
+    }
+
+    private void dispatchTranslatedKey(int code, boolean down) {
         if (!webView.hasFocus()) webView.requestFocus();
         long time = SystemClock.uptimeMillis();
         KeyEvent translated = new KeyEvent(time, time,
@@ -246,6 +298,8 @@ final class GamepadBridge {
     };
 
     void release() {
+        webView.removeCallbacks(neutralMovementRecovery);
+        neutralRecoveryQueued = false;
         aimX = aimY = 0;
         loopRunning = false;
         lastScriptAimTime = 0;
