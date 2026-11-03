@@ -40,6 +40,7 @@ final class GamepadBridge {
     private boolean hatUp, hatDown, hatLeft, hatRight;
     private boolean r1, r2, triggerAxis, attacking;
     private boolean pointerInitialized, loopRunning, neutralRecoveryQueued, wasMoving;
+    private boolean widescreenDisplay;
     private float pointerX, pointerY, aimX, aimY;
     private long attackDownTime, lastFrameTime, lastScriptAimTime;
 
@@ -221,10 +222,17 @@ final class GamepadBridge {
         cursor.invalidate();
     }
 
+    void setDisplayMode(String mode) {
+        widescreenDisplay = !"original".equals(mode);
+        if (pointerInitialized) clampPointer();
+    }
+
     private void clampPointer() {
         float vw = webView.getWidth(), vh = webView.getHeight();
-        float stageW = Math.min(vw, vh * 4f / 3f);
-        float stageH = Math.min(vh, vw * 3f / 4f);
+        // 4:3 only restricts aim to the original centered game viewport.
+        // Fill/Stretch place the game across the whole display.
+        float stageW = widescreenDisplay ? vw : Math.min(vw, vh * 4f / 3f);
+        float stageH = widescreenDisplay ? vh : Math.min(vh, vw * 3f / 4f);
         pointerX = Math.max((vw - stageW) / 2f + 1,
             Math.min((vw + stageW) / 2f - 1, pointerX));
         pointerY = Math.max((vh - stageH) / 2f + 1,
