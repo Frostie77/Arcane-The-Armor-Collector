@@ -184,9 +184,9 @@ final class GamepadBridge {
                 pressedKeys.remove(key);
                 dispatchTranslatedKey(key, false);
             }
-            // WebView.dispatchKeyEvent(KEY_UP) alone does not always clear
-            // Ruffle's internal pressed-key state. Reproduce the tested ADB
-            // key tap inside Ruffle after returning to neutral.
+            // Deliver a second, player-targeted key-up after movement
+            // returns to neutral. Never send recovery key-down events:
+            // they can make the character jump unexpectedly.
             webView.evaluateJavascript(
                 "if(window.arcaneClearMovementKeys)window.arcaneClearMovementKeys();",
                 null);
