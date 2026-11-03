@@ -7,6 +7,7 @@ import android.widget.FrameLayout;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.WebChromeClient;
@@ -24,6 +25,7 @@ import java.io.InputStream;
 public class MainActivity extends Activity {
     private WebView gameView;
     private GamepadBridge gamepad;
+    private boolean backgrounded;
     private static final String ORIGIN = "https://appassets.androidplatform.net";
 
     @Override public void onCreate(Bundle savedInstanceState) {
@@ -107,16 +109,45 @@ public class MainActivity extends Activity {
         return super.dispatchGenericMotionEvent(event);
     }
     @Override public void onPause() {
+        backgrounded = true;
         if (gamepad != null) gamepad.release();
-        if (gameView != null) gameView.onPause();
+        if (gameView != null) {
+            // WebView.onPause() alone doesn't pause JavaScript or Ruffle audio.
+            // Suspend the SWF before pausing timers, to stop both sounds and frames.
+            final WebView pausedView = gameView;
+            pausedView.evaluateJavascript(
+                "if (window.arcaneSuspend) window.arcaneSuspend();",
+                ignored -> {
+                    if (backgrounded && gameView == pausedView) pausedView.pauseTimers();
+                });
+            pausedView.onPause();
+            // Safety fallback if the JavaScript callback doesn't arrive after backgrounding.
+            pausedView.postDelayed(() -> {
+                if (backgrounded && gameView == pausedView) pausedView.pauseTimers();
+            }, 250);
+        }
         super.onPause();
     }
     @Override public void onResume() {
         super.onResume();
-        if (gameView != null) gameView.onResume();
+        backgrounded = false;
+        if (gameView != null) {
+            gameView.resumeTimers();
+            gameView.onResume();
+            gameView.evaluateJavascript(
+                "if (window.arcaneResume) window.arcaneResume();", null);
+        }
     }
     @Override public void onDestroy() {
-        if (gameView != null) gameView.destroy();
+        backgrounded = true;
+        if (gamepad != null) gamepad.release();
+        if (gameView != null) {
+            gameView.stopLoading();
+            ViewGroup parent = (ViewGroup) gameView.getParent();
+            if (parent != null) parent.removeView(gameView);
+            gameView.destroy();
+            gameView = null;
+        }
         super.onDestroy();
     }
 }
