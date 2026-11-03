@@ -184,7 +184,13 @@ final class GamepadBridge {
                 pressedKeys.remove(key);
                 dispatchTranslatedKey(key, false);
             }
-            Log.d(TAG, "movement-neutral: forced WASD release");
+            // WebView.dispatchKeyEvent(KEY_UP) alone does not always clear
+            // Ruffle's internal pressed-key state. Reproduce the tested ADB
+            // key tap inside Ruffle after returning to neutral.
+            webView.evaluateJavascript(
+                "if(window.arcaneClearMovementKeys)window.arcaneClearMovementKeys();",
+                null);
+            Log.d(TAG, "movement-neutral: forced WASD release + Ruffle reset");
         }
     };
 
