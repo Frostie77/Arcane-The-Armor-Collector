@@ -29,23 +29,55 @@ window.RufflePlayer.config = {
 // reach Ruffle, so deliver pointer motion to Ruffle's player directly.
 // Coordinates are normalized against the Android WebView; map them into the
 // browser viewport, including any 4:3 letterboxing.
+// The Ruffle web runtime binds pointer events to its internal canvas,
+// NOT to the outer <ruffle-player> web component. The canvas lives in
+// Ruffle's open Shadow DOM. Send pointer movement to the actual canvas
+// so Flash receives MouseMove even when the attack trigger is released.
+let arcaneControllerCanvas = null;
+let arcaneWarnedNoCanvas = false;
 window.arcaneControllerAim = (nx, ny) => {
   if (!arcanePlayer || arcaneInBackground) return;
-  const x = Math.max(0, Math.min(window.innerWidth - 1, nx * window.innerWidth));
-  const y = Math.max(0, Math.min(window.innerHeight - 1, ny * window.innerHeight));
-  const player = arcanePlayer;
+  const shadow = arcanePlayer.shadowRoot;
+  const canvases = shadow ? Array.from(shadow.querySelectorAll('canvas')) : [];
+  const canvas = canvases
+    .filter(el => el.getBoundingClientRect().width > 0 &&
+                  el.getBoundingClientRect().height > 0)
+    .sort((a,b) => {
+      const ra = a.getBoundingClientRect();
+      const rb = b.getBoundingClientRect();
+      return rb.width * rb.height - ra.width * ra.height;
+    })[0];
+  if (!canvas) {
+    if (!arcaneWarnedNoCanvas) {
+      console.warn('Arcane controller: Ruffle canvas not yet available');
+      arcaneWarnedNoCanvas = true;
+    }
+    return;
+  }
+  arcaneWarnedNoCanvas = false;
+  const r = canvas.getBoundingClientRect();
+  const viewX = Math.max(0, Math.min(window.innerWidth - 1, nx * window.innerWidth));
+  const viewY = Math.max(0, Math.min(window.innerHeight - 1, ny * window.innerHeight));
+  const x = Math.max(r.left + 1, Math.min(r.right - 1, viewX));
+  const y = Math.max(r.top + 1, Math.min(r.bottom - 1, viewY));
   if (typeof PointerEvent === 'function') {
-    player.dispatchEvent(new PointerEvent('pointermove', {
+    const options = {
       bubbles: true, composed: true, cancelable: true,
       pointerType: 'mouse', pointerId: 10, isPrimary: true,
       clientX: x, clientY: y, screenX: x, screenY: y,
       button: -1, buttons: 0, pressure: 0
-    }));
+    };
+    if (arcaneControllerCanvas !== canvas) {
+      arcaneControllerCanvas = canvas;
+      canvas.dispatchEvent(new PointerEvent('pointerenter', options));
+      console.info('Arcane controller: aiming at Ruffle canvas');
+    }
+    canvas.dispatchEvent(new PointerEvent('pointermove', options));
   } else {
-    player.dispatchEvent(new MouseEvent('mousemove', {
+    canvas.dispatchEvent(new MouseEvent('mousemove', {
       bubbles: true, composed: true, cancelable: true,
       clientX: x, clientY: y, screenX: x, screenY: y,
-      button: 0, buttons: 0
+      buttons: 0
     }));
   }
 };
