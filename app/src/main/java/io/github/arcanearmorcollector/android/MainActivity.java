@@ -35,6 +35,9 @@ public class MainActivity extends Activity {
     private boolean backgrounded;
     private FrameLayout root;
     private FrameLayout optionsOverlay;
+    private ScrollView optionsScroll;
+    private LinearLayout optionRows;
+    private boolean renderedControls;
     private TextView floatingOptionsButton;
     private boolean optionsOpen, showingControls;
     private int menuSelection, menuAxisLatch, bindingAction = -1;
@@ -249,6 +252,8 @@ public class MainActivity extends Activity {
             root.removeView(optionsOverlay);
             optionsOverlay = null;
         }
+        optionsScroll = null;
+        optionRows = null;
         floatingOptionsButton.setVisibility(View.VISIBLE);
         gameView.evaluateJavascript(
             "if(window.arcaneSetMenuPaused)window.arcaneSetMenuPaused(false);", null);
@@ -272,7 +277,7 @@ public class MainActivity extends Activity {
         if (bindingAction >= 0) return;
         int count = showingControls ? 11 : 3;
         menuSelection = (menuSelection + direction + count) % count;
-        renderOptions();
+        updateOptionsSelection();
     }
 
     private void adjustOption(int direction) {
@@ -312,16 +317,41 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    private void updateOptionsSelection() {
+        if (optionRows == null || optionsScroll == null) return;
+        for (int i = 0; i < optionRows.getChildCount(); i++) {
+            View child = optionRows.getChildAt(i);
+            if (!(child instanceof TextView)) continue;
+            TextView row = (TextView) child;
+            boolean selected = i == menuSelection;
+            String label = (String) row.getTag();
+            row.setText((selected ? "›  " : "   ") + label);
+            row.setTextColor(selected ? 0xFFFFE1A2 : 0xFFEAE7EA);
+            row.setBackground(roundedBackground(
+                selected ? 0xFF433147 : 0x88201A26,
+                selected ? 0xFFD0AA69 : 0x00000000, 8));
+        }
+        if (menuSelection < 0 || menuSelection >= optionRows.getChildCount()) return;
+        View row = optionRows.getChildAt(menuSelection);
+        int top = row.getTop(), bottom = row.getBottom();
+        int scrollTop = optionsScroll.getScrollY();
+        int scrollHeight = optionsScroll.getHeight();
+        if (scrollHeight <= 0) return;
+        // Keep the selected row visible, but never rebuild/animate the
+        // entire ScrollView on each D-pad or left-stick movement.
+        int padding = dp(6);
+        if (top < scrollTop + padding)
+            optionsScroll.scrollTo(0, Math.max(0, top - padding));
+        else if (bottom > scrollTop + scrollHeight - padding)
+            optionsScroll.scrollTo(0, bottom - scrollHeight + padding);
+    }
+
     private void addOptionRow(LinearLayout rows, ScrollView scroll,
                               String name, String detail, int index) {
-        boolean selected = index == menuSelection;
-        String line = (selected ? "›  " : "   ") + name +
-            (detail.isEmpty() ? "" : "\n    " + detail);
-        TextView row = makeText(line, 15, selected ? 0xFFFFE1A2 : 0xFFEAE7EA,
-            selected ? 0xFF433147 : 0x88201A26);
-        row.setBackground(roundedBackground(
-            selected ? 0xFF433147 : 0x88201A26,
-            selected ? 0xFFD0AA69 : 0x00000000, 8));
+        String label = name + (detail.isEmpty() ? "" : "\\n    " + detail);
+        TextView row = makeText(label, 15, 0xFFEAE7EA, 0x88201A26);
+        row.setTag(label);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = dp(5);
         rows.addView(row, lp);
@@ -329,13 +359,16 @@ public class MainActivity extends Activity {
             if (bindingAction >= 0) return;
             menuSelection = index;
             activateOption();
+            if (optionsOpen) updateOptionsSelection();
         });
-        if (selected) scroll.post(() -> scroll.smoothScrollTo(
-            0, Math.max(0, row.getTop() - dp(90))));
     }
 
     private void renderOptions() {
         if (!optionsOpen || optionsOverlay == null) return;
+        // Retain the current scroll offset when a setting changes. A tab
+        // switch starts at the top instead of jumping to the old tab's offset.
+        int restoreY = optionsScroll != null && renderedControls == showingControls
+            ? optionsScroll.getScrollY() : 0;
         optionsOverlay.removeAllViews();
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -363,6 +396,9 @@ public class MainActivity extends Activity {
         LinearLayout rows = new LinearLayout(this);
         rows.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(rows, new ScrollView.LayoutParams(-1, -2));
+        optionsScroll = scroll;
+        optionRows = rows;
+        renderedControls = showingControls;
         if (!showingControls) {
             addOptionRow(rows, scroll, "Resume Game", "Continue where you left off", 0);
             int mode = Math.max(0, displayModeIndex());
@@ -391,7 +427,14 @@ public class MainActivity extends Activity {
             prompt.setGravity(Gravity.CENTER);
             panel.addView(prompt, new LinearLayout.LayoutParams(-1, dp(38)));
         }
-        optionsOverlay.requestFocus();
+        updateOptionsSelection();
+        // Layout is asynchronous. Restore scroll only once after rebuilding,
+        // then adjust just enough to reveal the selected row if needed.
+        scroll.post(() -> {
+            if (!optionsOpen || optionsScroll != scroll) return;
+            scroll.scrollTo(0, restoreY);
+            updateOptionsSelection();
+        });
     }
 
     private boolean isGamepadKey(KeyEvent event) {
