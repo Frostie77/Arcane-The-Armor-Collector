@@ -349,7 +349,7 @@ public class MainActivity extends Activity {
 
     private void addOptionRow(LinearLayout rows, ScrollView scroll,
                               String name, String detail, int index) {
-        String label = name + (detail.isEmpty() ? "" : "\\n    " + detail);
+        String label = name + (detail.isEmpty() ? "" : "\n    " + detail);
         TextView row = makeText(label, 15, 0xFFEAE7EA, 0x88201A26);
         row.setTag(label);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
