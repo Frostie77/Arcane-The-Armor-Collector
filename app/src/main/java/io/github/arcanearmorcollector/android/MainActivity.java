@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.InputDevice;
@@ -239,10 +240,7 @@ public class MainActivity extends Activity {
 
     private void restoreControls() {
         gamepad.release();
-        // Restore all mappings in a fresh order: swaps can otherwise
-        // leave already-customized assignments on another action.
-        for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++)
-            gamepad.setButton(i, GamepadBridge.defaultButton(i));
+        gamepad.resetButtons();
         invertAimY = false;
         aimSpeedIndex = 1;
         setAimPreferences();
@@ -383,13 +381,58 @@ public class MainActivity extends Activity {
             optionsScroll.scrollTo(0, bottom - scrollHeight + padding);
     }
 
+    // The warning triangle is drawn, not a font emoji, so its position is
+    // reliable across Android versions and device fonts.
+    private final class WarningOptionRow extends TextView {
+        private final Paint warningPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path triangle = new Path();
+
+        WarningOptionRow() {
+            super(MainActivity.this);
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float x = getWidth() - dp(22);
+            float y = getHeight() / 2f;
+            float radius = dp(9);
+            triangle.reset();
+            triangle.moveTo(x, y - radius);
+            triangle.lineTo(x + radius, y + radius * 0.8f);
+            triangle.lineTo(x - radius, y + radius * 0.8f);
+            triangle.close();
+            warningPaint.setStyle(Paint.Style.FILL);
+            warningPaint.setColor(0xFFFFC65C);
+            canvas.drawPath(triangle, warningPaint);
+            warningPaint.setColor(0xFF332317);
+            warningPaint.setStrokeWidth(dp(2));
+            warningPaint.setStrokeCap(Paint.Cap.ROUND);
+            canvas.drawLine(x, y - dp(3), x, y + dp(2), warningPaint);
+            canvas.drawCircle(x, y + dp(5), dp(1), warningPaint);
+        }
+    }
+
     private void addOptionRow(LinearLayout rows, ScrollView scroll,
                               String name, String detail, int index) {
+        addOptionRow(rows, scroll, name, detail, index, false);
+    }
+
+    private void addOptionRow(LinearLayout rows, ScrollView scroll,
+                              String name, String detail, int index, boolean unmapped) {
         String label = name + (detail.isEmpty() ? "" : "\n    " + detail);
-        TextView row = makeText(label, 15, 0xFFEAE7EA, 0x88201A26);
+        TextView row = unmapped ? new WarningOptionRow() : new TextView(this);
+        row.setText(label);
+        row.setTextSize(showingControls ? 14 : 15);
+        row.setTextColor(0xFFEAE7EA);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        // Compact single-line controller mappings allow more settings to be
+        // visible without resizing FrostFrame or reintroducing scrolling bounce.
+        int verticalPadding = showingControls ? dp(6) : dp(10);
+        row.setPadding(dp(14), verticalPadding,
+            unmapped ? dp(48) : dp(14), verticalPadding);
         row.setTag(label);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = dp(5);
+        lp.bottomMargin = showingControls ? dp(3) : dp(5);
         rows.addView(row, lp);
         row.setOnClickListener(v -> {
             if (bindingAction >= 0) return;
@@ -445,11 +488,12 @@ public class MainActivity extends Activity {
         } else {
             addOptionRow(rows, scroll, "Back to Options", "", 0);
             for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++) {
+                boolean unmapped = gamepad.getButton(i) == GamepadBridge.UNMAPPED;
                 addOptionRow(rows, scroll,
                     GamepadBridge.ACTION_NAMES[i] + ": " +
                     GamepadBridge.buttonName(gamepad.getButton(i)),
-                    bindingAction == i ? "Press a button…" :
-                        "Change button", i + 1);
+                    bindingAction == i ? "Press a button…" : "",
+                    i + 1, unmapped);
             }
             addOptionRow(rows, scroll, "Invert Right-Stick Y: " +
                 (invertAimY ? "On" : "Off"), "Flip vertical aim", 8);
