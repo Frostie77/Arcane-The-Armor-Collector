@@ -45,3 +45,20 @@ The custom Android icon is supplied as a separate local asset pack; it is not in
 - Flash network calls are disabled; old MochiAds/highscores may not work.
 - Save files use WebView local storage and may require additional changes.
 - Controller-pointer bridge added, but not yet tested on-device. No finished launcher artwork or custom touchscreen overlay yet.
+
+
+## Display and controller options (experimental)
+
+A native pause/options overlay is available from the Odin's **Start** button or the small floating menu icon near the top-right of the screen. Opening the overlay calls Ruffle's suspend operation, pausing gameplay and audio; closing it resumes the game. Controller navigation uses D-pad/left stick to move, A to select, B to go back, and Start to resume. The same options can be tapped on screen.
+
+Display settings persist through Android SharedPreferences:
+
+- **Original 4:3**: entire Flash image with side bars.
+- **Fill Screen**: proportional enlargement with top/bottom cropping.
+- **Stretch to Screen**: entire Flash image stretched to widescreen.
+
+The Flash game's native artwork remains 4:3; Fill does not render new wider scenery. Changing mode does not reload the SWF. The controller crosshair and aiming coordinate translation use the current aspect mode.
+
+In **Controller Settings**, the user can rebind Attack, Alternate Attack, Switch Weapon, Swap Armour, Throw, Previous Throwable, and Next Throwable. Select the action and press the new physical button; duplicate assignments swap automatically. Available buttons: A/B/X/Y, L1/R1/L2/R2 and L3/R3. Start is always reserved for the options menu. Invert Right-Stick Y, Aim Sensitivity and Restore Default Controls are also available. Bindings and preferences persist across launches.
+
+Left stick/D-pad movement and right-stick aiming remain fixed in this initial controls editor, preserving the tested movement recovery and R2/cursor behaviour. All the new options require on-device verification before treating them as stable.
