@@ -7,7 +7,7 @@
 <style>
   html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#000; color:#ddd; font-family:sans-serif; }
   #stage { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
-  #game { width:min(100vw, calc(100vh * 4 / 3)); height:min(100vh, calc(100vw * 3 / 4)); }
+  #game { width:min(100vw, calc(100vh * 4 / 3)); height:min(100vh, calc(100vw * 3 / 4)); transform-origin:center center; }
   ruffle-player { width:100%; height:100%; }
   #status { position:absolute; left:12px; bottom:12px; z-index:10; background:#181818cc; padding:8px 12px; font-size:14px; }
 </style>
@@ -25,6 +25,35 @@ window.RufflePlayer.config = {
   allowNetworking: 'none',
   publicPath: 'ruffle/'
 };
+// Display modes are CSS-only to keep the loaded Flash game running without
+// resetting a round or losing progress. Arcane's SWF is 4:3, so "fill"
+// preserves its shape but crops the top/bottom; stretch fills the viewport
+// by altering the displayed aspect ratio.
+let arcaneDisplayMode = 'original';
+window.arcaneSetDisplayMode = (mode) => {
+  if (!['original', 'fill', 'stretch'].includes(mode)) mode = 'original';
+  arcaneDisplayMode = mode;
+  const game = document.getElementById('game');
+  const baseWidth = game.offsetWidth;
+  const baseHeight = game.offsetHeight;
+  if (baseWidth < 1 || baseHeight < 1) return;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  let sx = 1, sy = 1;
+  if (mode === 'fill') {
+    const factor = Math.max(viewportWidth / baseWidth, viewportHeight / baseHeight);
+    sx = factor;
+    sy = factor;
+  } else if (mode === 'stretch') {
+    sx = viewportWidth / baseWidth;
+    sy = viewportHeight / baseHeight;
+  }
+  game.style.transform = 'scale(' + sx + ', ' + sy + ')';
+  arcaneControllerCanvas = null;
+  console.info('ArcaneAspectMode ' + mode + ' scale=(' +
+    sx.toFixed(3) + ',' + sy.toFixed(3) + ')');
+};
+window.addEventListener('resize', () => window.arcaneSetDisplayMode(arcaneDisplayMode));
 // Right-stick aiming from Android. Native WebView hover events do not always
 // reach Ruffle, so deliver pointer motion to Ruffle's player directly.
 // Coordinates are normalized against the Android WebView; map them into the
@@ -106,8 +135,11 @@ window.arcaneControllerAim = (nx, ny) => {
     // a different scale than for genuine touch events. Ruffle reads
     // offsetX/Y, not clientX/Y. Supply canvas-local CSS coordinates
     // explicitly to make stick aim and R2 use identical game positions.
-    const localX = x - r.left;
-    const localY = y - r.top;
+    // The player can be CSS-scaled for widescreen display. Chromium's
+    // genuine touch events report offsetX/Y in the *untransformed* element
+    // coordinates; mirror that conversion for synthetic right-stick input.
+    const localX = (x - r.left) * canvas.offsetWidth / Math.max(1, r.width);
+    const localY = (y - r.top) * canvas.offsetHeight / Math.max(1, r.height);
     try {
       Object.defineProperties(synthetic, {
         offsetX: { configurable: true, value: localX },
