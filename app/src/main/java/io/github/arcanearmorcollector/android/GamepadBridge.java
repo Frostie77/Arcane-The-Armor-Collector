@@ -24,6 +24,10 @@ import java.util.Set;
 final class GamepadBridge {
     private static final String TAG = "ArcaneGamepad";
     private static final float DEADZONE = 0.20f;
+    // Use hysteresis for movement: engage away from centre, release sooner.
+    // This reduces ghost movement from analogue stick drift and axis noise.
+    private static final float MOVE_ON = 0.38f;
+    private static final float MOVE_OFF = 0.22f;
     private final WebView webView;
     final Cursor cursor;
 
@@ -34,7 +38,7 @@ final class GamepadBridge {
     private boolean r1, r2, triggerAxis, attacking;
     private boolean pointerInitialized, loopRunning;
     private float pointerX, pointerY, aimX, aimY;
-    private long attackDownTime, lastFrameTime;
+    private long attackDownTime, lastFrameTime, lastScriptAimTime;
 
     GamepadBridge(Activity activity, WebView view) {
         webView = view;
@@ -72,10 +76,10 @@ final class GamepadBridge {
 
         float leftX = event.getAxisValue(MotionEvent.AXIS_X);
         float leftY = event.getAxisValue(MotionEvent.AXIS_Y);
-        stickLeft = leftX < -DEADZONE;
-        stickRight = leftX > DEADZONE;
-        stickUp = leftY < -DEADZONE;
-        stickDown = leftY > DEADZONE;
+        stickLeft = movementActive(-leftX, stickLeft);
+        stickRight = movementActive(leftX, stickRight);
+        stickUp = movementActive(-leftY, stickUp);
+        stickDown = movementActive(leftY, stickDown);
 
         float hx = event.getAxisValue(MotionEvent.AXIS_HAT_X);
         float hy = event.getAxisValue(MotionEvent.AXIS_HAT_Y);
@@ -114,17 +118,32 @@ final class GamepadBridge {
         return Math.abs(value) <= DEADZONE ? 0 : value;
     }
 
+    private static boolean movementActive(float value, boolean alreadyHeld) {
+        return value > (alreadyHeld ? MOVE_OFF : MOVE_ON);
+    }
+
     private void updateMovement() {
-        setKey(KeyEvent.KEYCODE_W, keyUp || stickUp || hatUp);
-        setKey(KeyEvent.KEYCODE_S, keyDown || stickDown || hatDown);
-        setKey(KeyEvent.KEYCODE_A, keyLeft || stickLeft || hatLeft);
-        setKey(KeyEvent.KEYCODE_D, keyRight || stickRight || hatRight);
+        boolean up = keyUp || stickUp || hatUp;
+        boolean down = keyDown || stickDown || hatDown;
+        boolean left = keyLeft || stickLeft || hatLeft;
+        boolean right = keyRight || stickRight || hatRight;
+        // Release old directions BEFORE pressing replacements so the Flash
+        // game cannot briefly see contradictory movement keys held.
+        if (!up) setKey(KeyEvent.KEYCODE_W, false);
+        if (!down) setKey(KeyEvent.KEYCODE_S, false);
+        if (!left) setKey(KeyEvent.KEYCODE_A, false);
+        if (!right) setKey(KeyEvent.KEYCODE_D, false);
+        if (up) setKey(KeyEvent.KEYCODE_W, true);
+        if (down) setKey(KeyEvent.KEYCODE_S, true);
+        if (left) setKey(KeyEvent.KEYCODE_A, true);
+        if (right) setKey(KeyEvent.KEYCODE_D, true);
     }
 
     private void setKey(int code, boolean down) {
         if (pressedKeys.contains(code) == down) return;
         if (down) pressedKeys.add(code);
         else pressedKeys.remove(code);
+        if (!webView.hasFocus()) webView.requestFocus();
         long time = SystemClock.uptimeMillis();
         KeyEvent translated = new KeyEvent(time, time,
             down ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP,
@@ -201,8 +220,22 @@ final class GamepadBridge {
                 pointerX += aimX * speed * dt;
                 pointerY += aimY * speed * dt;
                 clampPointer();
-                if (attacking) sendPointer(MotionEvent.ACTION_MOVE);
-                else sendHover();
+                if (attacking) {
+                    sendPointer(MotionEvent.ACTION_MOVE);
+                } else {
+                    // Android WebView's native hover may move our cursor while
+                    // Ruffle misses the actual mousemove event. Inject a
+                    // pointermove directly into the player as well.
+                    sendHover();
+                    if (now - lastScriptAimTime >= 32L) {
+                        lastScriptAimTime = now;
+                        float nx = pointerX / Math.max(1, webView.getWidth());
+                        float ny = pointerY / Math.max(1, webView.getHeight());
+                        webView.evaluateJavascript(
+                            "if(window.arcaneControllerAim)window.arcaneControllerAim(" +
+                            nx + "," + ny + ");", null);
+                    }
+                }
             }
             webView.postOnAnimation(this);
         }
@@ -211,6 +244,7 @@ final class GamepadBridge {
     void release() {
         aimX = aimY = 0;
         loopRunning = false;
+        lastScriptAimTime = 0;
         webView.removeCallbacks(aimLoop);
         keyUp = keyDown = keyLeft = keyRight = false;
         stickUp = stickDown = stickLeft = stickRight = false;
