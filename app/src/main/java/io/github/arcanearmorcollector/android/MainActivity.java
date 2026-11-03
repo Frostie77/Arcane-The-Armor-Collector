@@ -43,6 +43,10 @@ public class MainActivity extends Activity {
     private boolean renderedControls;
     private View floatingOptionsButton;
     private boolean optionsOpen, showingControls;
+    private FrameLayout unmappedWarningLayer;
+    private TextView warningKeepEditing, warningContinue;
+    private int warningSelection;
+    private boolean warningExitMenu;
     private int menuSelection, menuAxisLatch, bindingAction = -1;
     private String displayMode = "original";
     private boolean invertAimY;
@@ -279,6 +283,8 @@ public class MainActivity extends Activity {
     private void closeOptions() {
         if (!optionsOpen) return;
         optionsOpen = false;
+        unmappedWarningLayer = null;
+        warningKeepEditing = warningContinue = null;
         bindingAction = -1;
         menuAxisLatch = 0;
         gamepad.release();
@@ -295,16 +301,153 @@ public class MainActivity extends Activity {
     }
 
     private void backOptions() {
+        if (unmappedWarningLayer != null) {
+            dismissUnmappedWarning();
+            return;
+        }
         if (bindingAction >= 0) {
             bindingAction = -1;
         } else if (showingControls) {
-            showingControls = false;
-            menuSelection = 2;
+            leaveControls(false);
+            return;
         } else {
             closeOptions();
             return;
         }
         renderOptions();
+    }
+
+    private void leaveControls(boolean exitMenu) {
+        boolean hasUnmapped = false;
+        for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++) {
+            if (gamepad.getButton(i) == GamepadBridge.UNMAPPED) {
+                hasUnmapped = true;
+                break;
+            }
+        }
+        if (hasUnmapped) showUnmappedWarning(exitMenu);
+        else finishLeavingControls(exitMenu);
+    }
+
+    private void finishLeavingControls(boolean exitMenu) {
+        if (exitMenu) {
+            closeOptions();
+        } else {
+            showingControls = false;
+            menuSelection = 2;
+            renderOptions();
+        }
+    }
+
+    private void dismissUnmappedWarning() {
+        if (unmappedWarningLayer != null && optionsOverlay != null)
+            optionsOverlay.removeView(unmappedWarningLayer);
+        unmappedWarningLayer = null;
+        warningKeepEditing = warningContinue = null;
+        if (optionsOverlay != null) optionsOverlay.requestFocus();
+    }
+
+    private void confirmUnmappedWarning(boolean continueAnyway) {
+        if (unmappedWarningLayer == null) return;
+        boolean exitMenu = warningExitMenu;
+        dismissUnmappedWarning();
+        if (continueAnyway) finishLeavingControls(exitMenu);
+    }
+
+    private void selectWarningChoice(int index) {
+        warningSelection = Math.max(0, Math.min(1, index));
+        if (warningKeepEditing != null && warningContinue != null) {
+            TextView[] choices = {warningKeepEditing, warningContinue};
+            for (int i = 0; i < choices.length; i++) {
+                boolean selected = i == warningSelection;
+                choices[i].setTextColor(selected ? 0xFFFFE1A2 : 0xFFEAE7EA);
+                choices[i].setBackground(roundedBackground(
+                    selected ? 0xFF433147 : 0xFF292331,
+                    selected ? 0xFFD0AA69 : 0xFF615064, 9));
+            }
+        }
+    }
+
+    private void showUnmappedWarning(boolean exitMenu) {
+        if (unmappedWarningLayer != null || optionsOverlay == null) return;
+        StringBuilder names = new StringBuilder();
+        for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++) {
+            if (gamepad.getButton(i) == GamepadBridge.UNMAPPED) {
+                if (names.length() > 0) names.append("\n");
+                names.append("• ").append(GamepadBridge.ACTION_NAMES[i]);
+            }
+        }
+        if (names.length() == 0) {
+            finishLeavingControls(exitMenu);
+            return;
+        }
+
+        warningExitMenu = exitMenu;
+        warningSelection = 0;
+        unmappedWarningLayer = new FrameLayout(this);
+        unmappedWarningLayer.setBackgroundColor(0x99000000);
+        unmappedWarningLayer.setClickable(true);
+        unmappedWarningLayer.setFocusableInTouchMode(true);
+        optionsOverlay.addView(unmappedWarningLayer, new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout dialog = new LinearLayout(this);
+        dialog.setOrientation(LinearLayout.VERTICAL);
+        dialog.setPadding(dp(20), dp(17), dp(20), dp(19));
+        dialog.setBackground(roundedBackground(0xFF251D2D, 0xFFD0AA69, 12));
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        FrameLayout.LayoutParams dialogParams = new FrameLayout.LayoutParams(
+            Math.min(dp(460), screenW - dp(56)), -2, Gravity.CENTER);
+        unmappedWarningLayer.addView(dialog, dialogParams);
+
+        TextView title = makeText("UNMAPPED CONTROLS", 19, 0xFFFFC65C, 0x00000000);
+        title.setGravity(Gravity.CENTER);
+        dialog.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView message = makeText(
+            "These actions have no button assigned:\n\n" + names +
+            "\n\nYou can continue, but those actions won't work in-game.",
+            14, 0xFFEAE7EA, 0x00000000);
+        dialog.addView(message, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-1, -2);
+        actionParams.topMargin = dp(10);
+        dialog.addView(actions, actionParams);
+        warningKeepEditing = makeText("Keep Editing", 14, 0xFFFFFFFF, 0xFF433147);
+        warningContinue = makeText("Continue Anyway", 14, 0xFFFFFFFF, 0xFF292331);
+        for (int i = 0; i < 2; i++) {
+            final int index = i;
+            TextView choice = i == 0 ? warningKeepEditing : warningContinue;
+            choice.setGravity(Gravity.CENTER);
+            choice.setOnClickListener(v -> confirmUnmappedWarning(index == 1));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(47), 1f);
+            if (i == 1) lp.leftMargin = dp(9);
+            actions.addView(choice, lp);
+        }
+        selectWarningChoice(0);
+        unmappedWarningLayer.requestFocus();
+    }
+
+    private boolean handleUnmappedWarningKey(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_UP:
+                selectWarningChoice(0); break;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                selectWarningChoice(1); break;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_BUTTON_A:
+                confirmUnmappedWarning(warningSelection == 1); break;
+            case KeyEvent.KEYCODE_BUTTON_B:
+            case KeyEvent.KEYCODE_BACK:
+            case KeyEvent.KEYCODE_BUTTON_START:
+                confirmUnmappedWarning(false); break;
+            default: break;
+        }
+        return true;
     }
 
     private void navigateOptions(int direction) {
@@ -527,6 +670,7 @@ public class MainActivity extends Activity {
         if (event.getAction() == KeyEvent.ACTION_UP) return true;
         if (event.getRepeatCount() > 0) return true;
         int code = event.getKeyCode();
+        if (unmappedWarningLayer != null) return handleUnmappedWarningKey(code);
         if (code == KeyEvent.KEYCODE_BACK) {
             backOptions();
             return true;
@@ -551,6 +695,17 @@ public class MainActivity extends Activity {
 
     private boolean handleOptionsMotion(MotionEvent event) {
         if (event.getAction() != MotionEvent.ACTION_MOVE) return true;
+        if (unmappedWarningLayer != null) {
+            float x = event.getAxisValue(MotionEvent.AXIS_X);
+            int direction = x > 0.68f ? 1 : x < -0.68f ? -1 : 0;
+            if (direction == 0) {
+                if (Math.abs(x) < 0.28f) menuAxisLatch = 0;
+            } else if (menuAxisLatch == 0) {
+                menuAxisLatch = direction;
+                selectWarningChoice(direction > 0 ? 1 : 0);
+            }
+            return true;
+        }
         if (bindingAction >= 0) {
             if (event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > 0.8f ||
                 event.getAxisValue(MotionEvent.AXIS_GAS) > 0.8f)
@@ -587,7 +742,14 @@ public class MainActivity extends Activity {
             isGamepadKey(event)) {
             if (event.getAction() == KeyEvent.ACTION_DOWN &&
                 event.getRepeatCount() == 0) {
-                if (optionsOpen) closeOptions();
+                if (unmappedWarningLayer != null) dismissUnmappedWarning();
+                else if (optionsOpen && showingControls) {
+                    if (bindingAction >= 0) {
+                        bindingAction = -1;
+                        renderOptions();
+                    }
+                    leaveControls(true);
+                } else if (optionsOpen) closeOptions();
                 else openOptions();
             }
             return true;
