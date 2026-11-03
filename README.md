@@ -54,10 +54,9 @@ A native pause/options overlay is available from the Odin's **Start** button or 
 Display settings persist through Android SharedPreferences:
 
 - **Original 4:3**: entire Flash image with side bars.
-- **Fill Screen**: proportional enlargement with top/bottom cropping.
 - **Stretch to Screen**: entire Flash image stretched to widescreen.
 
-The Flash game's native artwork remains 4:3; Fill does not render new wider scenery. Changing mode does not reload the SWF. The controller crosshair and aiming coordinate translation use the current aspect mode.
+The Flash game's native artwork remains 4:3. The former **Fill Screen** option was removed from Arcane because it crops gameplay and is unplayable on the Odin 2 Portal. Existing saved Fill settings automatically migrate to Stretch; other saved settings are unchanged. Changing mode does not reload the SWF. The controller crosshair and aiming coordinate translation use the current aspect mode.
 
 In **Controller Settings**, the user can rebind Attack, Alternate Attack, Switch Weapon, Swap Armour, Throw, Previous Throwable, and Next Throwable. Select the action and press the new physical button; duplicate assignments swap automatically. Available buttons: A/B/X/Y, L1/R1/L2/R2 and L3/R3. Start is always reserved for the options menu. Invert Right-Stick Y, Aim Sensitivity and Restore Default Controls are also available. Bindings and preferences persist across launches.
 
