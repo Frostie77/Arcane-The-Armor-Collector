@@ -1,6 +1,9 @@
 package io.github.arcanearmorcollector.android;
 
 import android.app.Activity;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.widget.FrameLayout;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -20,6 +23,7 @@ import java.io.InputStream;
 
 public class MainActivity extends Activity {
     private WebView gameView;
+    private GamepadBridge gamepad;
     private static final String ORIGIN = "https://appassets.androidplatform.net";
 
     @Override public void onCreate(Bundle savedInstanceState) {
@@ -75,7 +79,11 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-        setContentView(gameView);
+        FrameLayout root = new FrameLayout(this);
+        root.addView(gameView, new FrameLayout.LayoutParams(-1, -1));
+        gamepad = new GamepadBridge(this, gameView);
+        root.addView(gamepad.cursor, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(root);
         gameView.requestFocus();
         gameView.loadUrl(ORIGIN + "/assets/index.html");
     }
@@ -90,7 +98,16 @@ public class MainActivity extends Activity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) setImmersive();
     }
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (gamepad != null && gamepad.handleKey(event)) return true;
+        return super.dispatchKeyEvent(event);
+    }
+    @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (gamepad != null && gamepad.handleMotion(event)) return true;
+        return super.dispatchGenericMotionEvent(event);
+    }
     @Override public void onPause() {
+        if (gamepad != null) gamepad.release();
         if (gameView != null) gameView.onPause();
         super.onPause();
     }
