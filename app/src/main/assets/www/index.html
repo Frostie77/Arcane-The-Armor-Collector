@@ -135,10 +135,9 @@ window.arcaneControllerAim = (nx, ny) => {
     }));
   }
 };
-// Ruffle may miss Android WebView's synthetic key-up when touch input or
-// scene focus changes. An ADB-generated physical tap of W/A/S/D clears this
-// state, so reproduce each paired keydown/keyup on Ruffle's focused player
-// after the analog stick returns to neutral. Do not change active movement.
+// Ruffle may miss Android WebView's key-up when focus changes.
+// Dispatch key-up only after movement returns to neutral. Key-down/key-up
+// pairs fix stuck movement but also trigger gameplay actions (e.g. jumping).
 window.arcaneClearMovementKeys = () => {
   if (!arcanePlayer || arcaneInBackground) return;
   try {
@@ -147,15 +146,13 @@ window.arcaneClearMovementKeys = () => {
       ['w', 'KeyW', 87], ['a', 'KeyA', 65],
       ['s', 'KeyS', 83], ['d', 'KeyD', 68]
     ]) {
-      for (const type of ['keydown', 'keyup']) {
-        arcanePlayer.dispatchEvent(new KeyboardEvent(type, {
-          key, code, keyCode, which: keyCode,
-          bubbles: true, composed: true, cancelable: true,
-          repeat: false
-        }));
-      }
+      arcanePlayer.dispatchEvent(new KeyboardEvent('keyup', {
+        key, code, keyCode, which: keyCode,
+        bubbles: true, composed: true, cancelable: true,
+        repeat: false
+      }));
     }
-    console.info('ArcaneMovementRecovery: focused player and tapped WASD');
+    console.info('ArcaneMovementRecovery: focused player, WASD key-up only');
   } catch (error) {
     console.warn('ArcaneMovementRecovery: failed', error);
   }
