@@ -135,24 +135,29 @@ window.arcaneControllerAim = (nx, ny) => {
     }));
   }
 };
-// Ruffle may miss Android WebView's key-up when focus changes.
-// Dispatch key-up only after movement returns to neutral. Key-down/key-up
-// pairs fix stuck movement but also trigger gameplay actions (e.g. jumping).
+// Ruffle can miss Android WebView's key-up when focus changes.
+// A key-down/up pair clears stale movement in the Flash game, but W is
+// Arcane's JUMP command: never synthesize a W press during recovery.
+// Use release-only for W; tap A/S/D to clear their stuck states.
 window.arcaneClearMovementKeys = () => {
   if (!arcanePlayer || arcaneInBackground) return;
   try {
     arcanePlayer.focus();
-    for (const [key, code, keyCode] of [
-      ['w', 'KeyW', 87], ['a', 'KeyA', 65],
-      ['s', 'KeyS', 83], ['d', 'KeyD', 68]
-    ]) {
-      arcanePlayer.dispatchEvent(new KeyboardEvent('keyup', {
+    const send = (type, key, code, keyCode) => {
+      arcanePlayer.dispatchEvent(new KeyboardEvent(type, {
         key, code, keyCode, which: keyCode,
         bubbles: true, composed: true, cancelable: true,
         repeat: false
       }));
+    };
+    send('keyup', 'w', 'KeyW', 87);
+    for (const [key, code, keyCode] of [
+      ['a', 'KeyA', 65], ['s', 'KeyS', 83], ['d', 'KeyD', 68]
+    ]) {
+      send('keydown', key, code, keyCode);
+      send('keyup', key, code, keyCode);
     }
-    console.info('ArcaneMovementRecovery: focused player, WASD key-up only');
+    console.info('ArcaneMovementRecovery: W release; A/S/D down-up');
   } catch (error) {
     console.warn('ArcaneMovementRecovery: failed', error);
   }
