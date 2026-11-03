@@ -23,7 +23,7 @@ A **small, unofficial personal-use Android wrapper** for a classic Flash (SWF) g
 
 Original keyboard/mouse: WASD movement; mouse aim and left-click attack; Space switches weapon; E throws; B swaps armour; R/T cycle throwable weapons. Sources: classic Flash game listing at flashga.me and FlashGames.BambouSoft.
 
-Current Ruffle experimental gamepad-to-key config: D-pad -> WASD; south -> Space; east -> E; west -> B; north -> R; left trigger -> T; right trigger -> E. **Analog-stick aiming and attack are not yet implemented.** Android WebView may not expose gamepads the same way as desktop browsers; test before designing a finished control scheme.
+The Android-side experimental gamepad bridge maps left stick / D-pad -> WASD, right stick -> pointer aiming, R1/R2 -> touch attack, A -> Space, X -> E, B -> B, Y -> R, and L1 -> T. It generates keyboard and pointer events for the WebView rather than relying on its gamepad API. **This mapping is not yet tested on an actual Odin**; touch interaction remains supported. Right-stick hover, attacks, and simultaneous controller/touch input require on-device validation.
 
 ## Publishing to GitHub
 
@@ -38,4 +38,4 @@ Android WebViewAssetLoader: https://developer.android.com/reference/androidx/web
 - Input mapping is provisional; Android gamepad testing is essential.
 - Flash network calls are disabled; old MochiAds/highscores may not work.
 - Save files use WebView local storage and may require additional changes.
-- No finished launcher artwork, controller-pointer bridge, GitHub repository, or built/tested APK yet.
+- Controller-pointer bridge added, but not yet tested on-device. No finished launcher artwork or custom touchscreen overlay yet.
