@@ -421,8 +421,8 @@ public class MainActivity extends Activity {
         heading.setGravity(Gravity.CENTER);
         panel.addView(heading, new LinearLayout.LayoutParams(-1, dp(45)));
         TextView help = makeText(bindingAction >= 0
-                ? "Press the controller button to assign. Start: close   Back: cancel"
-                : "D-pad / left stick: navigate    A: select    B: back    Start: resume",
+                ? "Press a button · B: Cancel · Start: Resume"
+                : "Stick/D-pad: Move · A: Select · B: Back · Start: Resume",
             11, 0xFFDDD2BF, 0x00000000);
         help.setGravity(Gravity.CENTER);
         panel.addView(help, new LinearLayout.LayoutParams(-1, dp(42)));
@@ -436,26 +436,26 @@ public class MainActivity extends Activity {
         optionRows = rows;
         renderedControls = showingControls;
         if (!showingControls) {
-            addOptionRow(rows, scroll, "Resume Game", "Continue where you left off", 0);
+            addOptionRow(rows, scroll, "Resume Game", "Return to game", 0);
             int mode = Math.max(0, displayModeIndex());
             addOptionRow(rows, scroll, "Display Mode: " + DISPLAY_NAMES[mode],
-                mode == 0 ? "Original image with black side bars" :
-                "Entire game visible across the widescreen display", 1);
-            addOptionRow(rows, scroll, "Controller Settings", "Remap buttons and adjust aiming", 2);
+                mode == 0 ? "Unstretched · side bars" :
+                "Full widescreen · stretched", 1);
+            addOptionRow(rows, scroll, "Controller Settings", "Buttons and aiming", 2);
         } else {
             addOptionRow(rows, scroll, "Back to Options", "", 0);
             for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++) {
                 addOptionRow(rows, scroll,
                     GamepadBridge.ACTION_NAMES[i] + ": " +
                     GamepadBridge.buttonName(gamepad.getButton(i)),
-                    bindingAction == i ? "Press a controller button now..." :
-                        "Select to remap", i + 1);
+                    bindingAction == i ? "Press a button…" :
+                        "Change button", i + 1);
             }
             addOptionRow(rows, scroll, "Invert Right-Stick Y: " +
-                (invertAimY ? "On" : "Off"), "Reverse vertical aiming", 8);
+                (invertAimY ? "On" : "Off"), "Flip vertical aim", 8);
             addOptionRow(rows, scroll, "Aim Sensitivity: " +
-                AIM_SPEEDS[aimSpeedIndex] + "×", "Adjust right-stick movement speed", 9);
-            addOptionRow(rows, scroll, "Restore Default Controls", "Reset buttons and aiming", 10);
+                AIM_SPEEDS[aimSpeedIndex] + "×", "Right-stick speed", 9);
+            addOptionRow(rows, scroll, "Restore Default Controls", "Restore original mappings", 10);
         }
         if (bindingAction >= 0) {
             TextView prompt = makeText("WAITING FOR BUTTON…", 14, 0xFFFFE6AD, 0xFF48323F);
