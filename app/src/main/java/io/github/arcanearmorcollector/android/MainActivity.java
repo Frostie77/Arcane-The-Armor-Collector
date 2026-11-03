@@ -2,6 +2,8 @@ package io.github.arcanearmorcollector.android;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.InputDevice;
@@ -38,7 +40,7 @@ public class MainActivity extends Activity {
     private ScrollView optionsScroll;
     private LinearLayout optionRows;
     private boolean renderedControls;
-    private TextView floatingOptionsButton;
+    private View floatingOptionsButton;
     private boolean optionsOpen, showingControls;
     private int menuSelection, menuAxisLatch, bindingAction = -1;
     private String displayMode = "original";
@@ -128,8 +130,9 @@ public class MainActivity extends Activity {
         gamepad.cursor.setClickable(false);
         gamepad.cursor.setFocusable(false);
         root.addView(gamepad.cursor, new FrameLayout.LayoutParams(-1, -1));
-        floatingOptionsButton = makeText("☰", 23, 0xFFFFFFFF, 0xB8221B2A);
-        floatingOptionsButton.setGravity(Gravity.CENTER);
+        // Render a genuine three-line icon instead of a font glyph, which
+        // Android WebView / system fonts can draw off-centre.
+        floatingOptionsButton = new MenuIconView();
         floatingOptionsButton.setContentDescription("Pause and open Arcane options");
         floatingOptionsButton.setOnClickListener(v -> openOptions());
         FrameLayout.LayoutParams floatParams = new FrameLayout.LayoutParams(
@@ -144,6 +147,33 @@ public class MainActivity extends Activity {
 
     private int dp(float points) {
         return Math.round(points * getResources().getDisplayMetrics().density);
+    }
+
+    private final class MenuIconView extends View {
+        private final Paint lines = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        MenuIconView() {
+            super(MainActivity.this);
+            setBackground(roundedBackground(0xB8221B2A, 0, 9));
+            setClickable(true);
+            setElevation(dp(4));
+            lines.setColor(0xFFFFFFFF);
+            lines.setStrokeWidth(dp(2.5f));
+            lines.setStrokeCap(Paint.Cap.ROUND);
+            lines.setStyle(Paint.Style.STROKE);
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float cx = getWidth() / 2f;
+            float cy = getHeight() / 2f;
+            float halfWidth = dp(9);
+            float spacing = dp(6);
+            for (int i = -1; i <= 1; i++) {
+                float y = cy + i * spacing;
+                canvas.drawLine(cx - halfWidth, y, cx + halfWidth, y, lines);
+            }
+        }
     }
 
     private GradientDrawable roundedBackground(int color, int stroke, int radius) {
