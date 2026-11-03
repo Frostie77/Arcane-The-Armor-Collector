@@ -84,7 +84,8 @@ public class MainActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.addView(gameView, new FrameLayout.LayoutParams(-1, -1));
         gamepad = new GamepadBridge(this, gameView);
-        root.addView(gamepad.cursor, new FrameLayout.LayoutParams(-1, -1));
+        // The game's own reticle is the only visible aiming cursor.
+        // We keep the bridge's pointer position internally, but don't draw a second crosshair.
         setContentView(root);
         gameView.requestFocus();
         gameView.loadUrl(ORIGIN + "/assets/index.html");
