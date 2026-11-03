@@ -1,0 +1,41 @@
+# Arcane: The Armor Collector — Android proof of concept
+
+A **small, unofficial personal-use Android wrapper** for a classic Flash (SWF) game, built with Ruffle and an Android WebView. This project is NOT affiliated with the game's original creators or Ruffle.
+
+**Status:** Source scaffold / untested Android prototype. The uploaded SWF reportedly runs on Ruffle Windows; Android WebView, gamepad support, mouse aiming, audio, saved games, and performance are **not yet verified**.
+
+## Goal
+
+- Offline 4:3 Flash rendering inside a landscape, immersive Android app
+- Controller mapping tailored for AYN Odin 2 Portal (initial, experimental button mappings only)
+- Later: right-stick mouse aiming, trigger attack, saved-game validation, custom icon, ES-DE entry
+
+## Build on Windows with Android Studio
+
+1. Copy your own `arcane-the-armor-collector.swf` into `app/src/main/assets/www/arcane.swf` (the user-only handover ZIP may already contain it).
+2. Open PowerShell inside this folder and run `powershell -ExecutionPolicy Bypass -File .\prepare.ps1`. It downloads **official Ruffle 0.7.1**, prepares Android SDK configuration, and creates Gradle's official wrapper (approximately 130 MB initial Gradle download).
+3. Open this project folder with Android Studio, wait for Gradle sync, then **Build > Build APK(s)**.
+4. Install `app/build/outputs/apk/debug/app-debug.apk` with ADB. Test boot, sound, menus, game, and saves.
+
+**Internet is required to prepare/build on Windows, but not to play once packaged.** The Android manifest has no `INTERNET` permission and the built app uses only packaged assets.
+
+## Expected controls (needs testing)
+
+Original keyboard/mouse: WASD movement; mouse aim and left-click attack; Space switches weapon; E throws; B swaps armour; R/T cycle throwable weapons. Sources: classic Flash game listing at flashga.me and FlashGames.BambouSoft.
+
+Current Ruffle experimental gamepad-to-key config: D-pad -> WASD; south -> Space; east -> E; west -> B; north -> R; left trigger -> T; right trigger -> E. **Analog-stick aiming and attack are not yet implemented.** Android WebView may not expose gamepads the same way as desktop browsers; test before designing a finished control scheme.
+
+## Publishing to GitHub
+
+The recommended repository is `Arcane-Armor-Collector-Android`. `arcane.swf` is deliberately ignored by Git, as are the downloaded Ruffle assets. **Do not publish the original SWF, game art, or a redistributable APK with the game included without permission from the original rightsholders.** Keep public GitHub limited to wrapper source and setup instructions.
+
+Ruffle: https://ruffle.rs (MIT/Apache-2.0; preserve upstream notices if you redistribute its runtime).
+Android WebViewAssetLoader: https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader
+
+## Known limitations
+
+- Ruffle desktop compatibility doesn't guarantee WebView compatibility.
+- Input mapping is provisional; Android gamepad testing is essential.
+- Flash network calls are disabled; old MochiAds/highscores may not work.
+- Save files use WebView local storage and may require additional changes.
+- No finished launcher artwork, controller-pointer bridge, GitHub repository, or built/tested APK yet.
