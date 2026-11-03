@@ -1,9 +1,16 @@
 package io.github.arcanearmorcollector.android;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Gravity;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -26,10 +33,27 @@ public class MainActivity extends Activity {
     private WebView gameView;
     private GamepadBridge gamepad;
     private boolean backgrounded;
+    private FrameLayout root;
+    private FrameLayout optionsOverlay;
+    private TextView floatingOptionsButton;
+    private boolean optionsOpen, showingControls;
+    private int menuSelection, menuAxisLatch, bindingAction = -1;
+    private String displayMode = "original";
+    private boolean invertAimY;
+    private int aimSpeedIndex = 1;
+    private static final String[] DISPLAY_MODES = {"original", "fill", "stretch"};
+    private static final String[] DISPLAY_NAMES = {"Original 4:3", "Fill Screen", "Stretch to Screen"};
+    private static final float[] AIM_SPEEDS = {0.6f, 0.9f, 1.2f, 1.5f, 1.8f};
     private static final String ORIGIN = "https://appassets.androidplatform.net";
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        displayMode = prefs.getString("display_mode", "original");
+        if (displayModeIndex() < 0) displayMode = "original";
+        invertAimY = prefs.getBoolean("invert_aim_y", false);
+        aimSpeedIndex = prefs.getInt("aim_speed", 1);
+        aimSpeedIndex = Math.max(0, Math.min(AIM_SPEEDS.length - 1, aimSpeedIndex));
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setImmersive();
 
@@ -65,6 +89,12 @@ public class MainActivity extends Activity {
         s.setAllowUniversalAccessFromFileURLs(false);
 
         gameView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView v, String url) {
+                super.onPageFinished(v, url);
+                applyDisplayModeToPage();
+                if (optionsOpen) v.evaluateJavascript(
+                    "if(window.arcaneSetMenuPaused)window.arcaneSetMenuPaused(true);", null);
+            }
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest request) {
                 if (!ORIGIN.equals(request.getUrl().getScheme() + "://" + request.getUrl().getHost())) {
                     return new WebResourceResponse("text/plain", "UTF-8", new java.io.ByteArrayInputStream(new byte[0]));
@@ -81,17 +111,342 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-        FrameLayout root = new FrameLayout(this);
+        root = new FrameLayout(this);
         root.addView(gameView, new FrameLayout.LayoutParams(-1, -1));
         gamepad = new GamepadBridge(this, gameView);
+        gamepad.setDisplayMode(displayMode);
+        gamepad.setAimOptions(invertAimY, AIM_SPEEDS[aimSpeedIndex]);
+        for (int action = 0; action < GamepadBridge.ACTION_NAMES.length; action++) {
+            gamepad.setButton(action, prefs.getInt(
+                "button_" + action, GamepadBridge.defaultButton(action)));
+        }
         // Always show the controller's aiming guide. Some Arcane scenes
         // hide the Flash cursor, but the native guide remains visible.
         gamepad.cursor.setClickable(false);
         gamepad.cursor.setFocusable(false);
         root.addView(gamepad.cursor, new FrameLayout.LayoutParams(-1, -1));
+        floatingOptionsButton = makeText("☰", 23, 0xFFFFFFFF, 0xB8221B2A);
+        floatingOptionsButton.setGravity(Gravity.CENTER);
+        floatingOptionsButton.setContentDescription("Pause and open Arcane options");
+        floatingOptionsButton.setOnClickListener(v -> openOptions());
+        FrameLayout.LayoutParams floatParams = new FrameLayout.LayoutParams(
+            dp(44), dp(44), Gravity.RIGHT | Gravity.TOP);
+        floatParams.topMargin = dp(18);
+        floatParams.rightMargin = dp(18);
+        root.addView(floatingOptionsButton, floatParams);
         setContentView(root);
         gameView.requestFocus();
         gameView.loadUrl(ORIGIN + "/assets/index.html");
+    }
+
+    private int dp(float points) {
+        return Math.round(points * getResources().getDisplayMetrics().density);
+    }
+
+    private GradientDrawable roundedBackground(int color, int stroke, int radius) {
+        GradientDrawable b = new GradientDrawable();
+        b.setColor(color);
+        b.setCornerRadius(dp(radius));
+        if (stroke != 0) b.setStroke(dp(1), stroke);
+        return b;
+    }
+
+    private TextView makeText(String label, int size, int color, int background) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextSize(size);
+        t.setTextColor(color);
+        t.setGravity(Gravity.CENTER_VERTICAL);
+        t.setBackground(roundedBackground(background, 0, 9));
+        t.setPadding(dp(14), dp(10), dp(14), dp(10));
+        return t;
+    }
+
+    private int displayModeIndex() {
+        for (int i = 0; i < DISPLAY_MODES.length; i++)
+            if (DISPLAY_MODES[i].equals(displayMode)) return i;
+        return -1;
+    }
+
+    private void applyDisplayModeToPage() {
+        if (gameView != null) gameView.evaluateJavascript(
+            "if(window.arcaneSetDisplayMode)window.arcaneSetDisplayMode('" +
+            displayMode + "');", null);
+    }
+
+    private void cycleDisplay(int direction) {
+        int index = displayModeIndex();
+        if (index < 0) index = 0;
+        displayMode = DISPLAY_MODES[(index + direction + DISPLAY_MODES.length) % DISPLAY_MODES.length];
+        getPreferences(MODE_PRIVATE).edit().putString("display_mode", displayMode).apply();
+        gamepad.setDisplayMode(displayMode);
+        applyDisplayModeToPage();
+        renderOptions();
+    }
+
+    private void setAimPreferences() {
+        getPreferences(MODE_PRIVATE).edit()
+            .putBoolean("invert_aim_y", invertAimY)
+            .putInt("aim_speed", aimSpeedIndex).apply();
+        gamepad.setAimOptions(invertAimY, AIM_SPEEDS[aimSpeedIndex]);
+    }
+
+    private void saveBindings() {
+        SharedPreferences.Editor e = getPreferences(MODE_PRIVATE).edit();
+        for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++)
+            e.putInt("button_" + i, gamepad.getButton(i));
+        e.apply();
+    }
+
+    private void restoreControls() {
+        gamepad.release();
+        // Restore all mappings in a fresh order: swaps can otherwise
+        // leave already-customized assignments on another action.
+        for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++)
+            gamepad.setButton(i, GamepadBridge.defaultButton(i));
+        invertAimY = false;
+        aimSpeedIndex = 1;
+        setAimPreferences();
+        saveBindings();
+        renderOptions();
+    }
+
+    private void assignButton(int keyCode) {
+        if (bindingAction < 0 || !GamepadBridge.canBindButton(keyCode)) return;
+        gamepad.setButton(bindingAction, keyCode);
+        saveBindings();
+        bindingAction = -1;
+        renderOptions();
+    }
+
+    private void openOptions() {
+        if (optionsOpen) return;
+        gamepad.release();
+        optionsOpen = true;
+        showingControls = false;
+        menuSelection = 0;
+        menuAxisLatch = 0;
+        bindingAction = -1;
+        floatingOptionsButton.setVisibility(View.GONE);
+        gameView.evaluateJavascript(
+            "if(window.arcaneSetMenuPaused)window.arcaneSetMenuPaused(true);", null);
+        optionsOverlay = new FrameLayout(this);
+        optionsOverlay.setBackgroundColor(0xC9000000);
+        optionsOverlay.setClickable(true);
+        optionsOverlay.setFocusableInTouchMode(true);
+        root.addView(optionsOverlay, new FrameLayout.LayoutParams(-1, -1));
+        renderOptions();
+        optionsOverlay.requestFocus();
+    }
+
+    private void closeOptions() {
+        if (!optionsOpen) return;
+        optionsOpen = false;
+        bindingAction = -1;
+        menuAxisLatch = 0;
+        gamepad.release();
+        if (optionsOverlay != null) {
+            root.removeView(optionsOverlay);
+            optionsOverlay = null;
+        }
+        floatingOptionsButton.setVisibility(View.VISIBLE);
+        gameView.evaluateJavascript(
+            "if(window.arcaneSetMenuPaused)window.arcaneSetMenuPaused(false);", null);
+        gameView.requestFocus();
+    }
+
+    private void backOptions() {
+        if (bindingAction >= 0) {
+            bindingAction = -1;
+        } else if (showingControls) {
+            showingControls = false;
+            menuSelection = 2;
+        } else {
+            closeOptions();
+            return;
+        }
+        renderOptions();
+    }
+
+    private void navigateOptions(int direction) {
+        if (bindingAction >= 0) return;
+        int count = showingControls ? 11 : 3;
+        menuSelection = (menuSelection + direction + count) % count;
+        renderOptions();
+    }
+
+    private void adjustOption(int direction) {
+        if (bindingAction >= 0) return;
+        if (!showingControls && menuSelection == 1) {
+            cycleDisplay(direction);
+        } else if (showingControls && menuSelection == 8) {
+            invertAimY = !invertAimY;
+            setAimPreferences();
+            renderOptions();
+        } else if (showingControls && menuSelection == 9) {
+            aimSpeedIndex = (aimSpeedIndex + direction + AIM_SPEEDS.length) % AIM_SPEEDS.length;
+            setAimPreferences();
+            renderOptions();
+        }
+    }
+
+    private void activateOption() {
+        if (bindingAction >= 0) return;
+        if (!showingControls) {
+            if (menuSelection == 0) closeOptions();
+            else if (menuSelection == 1) cycleDisplay(1);
+            else {
+                showingControls = true;
+                menuSelection = 0;
+                renderOptions();
+            }
+        } else if (menuSelection == 0) {
+            backOptions();
+        } else if (menuSelection <= 7) {
+            bindingAction = menuSelection - 1;
+            renderOptions();
+        } else if (menuSelection == 8 || menuSelection == 9) {
+            adjustOption(1);
+        } else if (menuSelection == 10) {
+            restoreControls();
+        }
+    }
+
+    private void addOptionRow(LinearLayout rows, ScrollView scroll,
+                              String name, String detail, int index) {
+        boolean selected = index == menuSelection;
+        String line = (selected ? "›  " : "   ") + name +
+            (detail.isEmpty() ? "" : "\n    " + detail);
+        TextView row = makeText(line, 15, selected ? 0xFFFFE1A2 : 0xFFEAE7EA,
+            selected ? 0xFF433147 : 0x88201A26);
+        row.setBackground(roundedBackground(
+            selected ? 0xFF433147 : 0x88201A26,
+            selected ? 0xFFD0AA69 : 0x00000000, 8));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = dp(5);
+        rows.addView(row, lp);
+        row.setOnClickListener(v -> {
+            if (bindingAction >= 0) return;
+            menuSelection = index;
+            activateOption();
+        });
+        if (selected) scroll.post(() -> scroll.smoothScrollTo(
+            0, Math.max(0, row.getTop() - dp(90))));
+    }
+
+    private void renderOptions() {
+        if (!optionsOpen || optionsOverlay == null) return;
+        optionsOverlay.removeAllViews();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(22), dp(18), dp(22), dp(18));
+        panel.setBackground(roundedBackground(0xF5221A2B, 0xFFC09A62, 16));
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        int screenH = getResources().getDisplayMetrics().heightPixels;
+        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
+            Math.min(dp(560), screenW - dp(40)),
+            Math.min(dp(525), screenH - dp(38)), Gravity.CENTER);
+        optionsOverlay.addView(panel, panelParams);
+        TextView heading = makeText(showingControls ? "CONTROLS" : "ARCANE  •  OPTIONS",
+            21, 0xFFFFE0A1, 0x00000000);
+        heading.setGravity(Gravity.CENTER);
+        panel.addView(heading, new LinearLayout.LayoutParams(-1, dp(45)));
+        TextView help = makeText(bindingAction >= 0
+                ? "Press the controller button to assign. Start: close   Back: cancel"
+                : "D-pad / left stick: navigate    A: select    B: back    Start: resume",
+            11, 0xFFDDD2BF, 0x00000000);
+        help.setGravity(Gravity.CENTER);
+        panel.addView(help, new LinearLayout.LayoutParams(-1, dp(42)));
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+        LinearLayout rows = new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(rows, new ScrollView.LayoutParams(-1, -2));
+        if (!showingControls) {
+            addOptionRow(rows, scroll, "Resume Game", "Continue where you left off", 0);
+            int mode = Math.max(0, displayModeIndex());
+            addOptionRow(rows, scroll, "Display Mode: " + DISPLAY_NAMES[mode],
+                mode == 0 ? "Original image with black side bars" :
+                mode == 1 ? "Cropped edges, correct proportions" :
+                "Stretched to fit the entire display", 1);
+            addOptionRow(rows, scroll, "Controller Settings", "Remap buttons and adjust aiming", 2);
+        } else {
+            addOptionRow(rows, scroll, "Back to Options", "", 0);
+            for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++) {
+                addOptionRow(rows, scroll,
+                    GamepadBridge.ACTION_NAMES[i] + ": " +
+                    GamepadBridge.buttonName(gamepad.getButton(i)),
+                    bindingAction == i ? "Press a controller button now..." :
+                        "Select to remap", i + 1);
+            }
+            addOptionRow(rows, scroll, "Invert Right-Stick Y: " +
+                (invertAimY ? "On" : "Off"), "Reverse vertical aiming", 8);
+            addOptionRow(rows, scroll, "Aim Sensitivity: " +
+                AIM_SPEEDS[aimSpeedIndex] + "×", "Adjust right-stick movement speed", 9);
+            addOptionRow(rows, scroll, "Restore Default Controls", "Reset buttons and aiming", 10);
+        }
+        if (bindingAction >= 0) {
+            TextView prompt = makeText("WAITING FOR BUTTON…", 14, 0xFFFFE6AD, 0xFF48323F);
+            prompt.setGravity(Gravity.CENTER);
+            panel.addView(prompt, new LinearLayout.LayoutParams(-1, dp(38)));
+        }
+        optionsOverlay.requestFocus();
+    }
+
+    private boolean isGamepadKey(KeyEvent event) {
+        return (event.getSource() & (InputDevice.SOURCE_GAMEPAD |
+            InputDevice.SOURCE_DPAD | InputDevice.SOURCE_JOYSTICK)) != 0;
+    }
+
+    private boolean handleOptionsKey(KeyEvent event) {
+        if (event.getAction() != KeyEvent.ACTION_DOWN &&
+            event.getAction() != KeyEvent.ACTION_UP) return true;
+        if (event.getAction() == KeyEvent.ACTION_UP) return true;
+        if (event.getRepeatCount() > 0) return true;
+        int code = event.getKeyCode();
+        if (code == KeyEvent.KEYCODE_BACK) {
+            backOptions();
+            return true;
+        }
+        if (bindingAction >= 0) {
+            if (GamepadBridge.canBindButton(code)) assignButton(code);
+            return true;
+        }
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_UP: navigateOptions(-1); break;
+            case KeyEvent.KEYCODE_DPAD_DOWN: navigateOptions(1); break;
+            case KeyEvent.KEYCODE_DPAD_LEFT: adjustOption(-1); break;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: adjustOption(1); break;
+            case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_DPAD_CENTER: activateOption(); break;
+            case KeyEvent.KEYCODE_BUTTON_B: backOptions(); break;
+            default: break;
+        }
+        return true;
+    }
+
+    private boolean handleOptionsMotion(MotionEvent event) {
+        if (event.getAction() != MotionEvent.ACTION_MOVE) return true;
+        if (bindingAction >= 0) {
+            if (event.getAxisValue(MotionEvent.AXIS_RTRIGGER) > 0.8f ||
+                event.getAxisValue(MotionEvent.AXIS_GAS) > 0.8f)
+                assignButton(KeyEvent.KEYCODE_BUTTON_R2);
+            else if (event.getAxisValue(MotionEvent.AXIS_LTRIGGER) > 0.8f ||
+                     event.getAxisValue(MotionEvent.AXIS_BRAKE) > 0.8f)
+                assignButton(KeyEvent.KEYCODE_BUTTON_L2);
+            return true;
+        }
+        float y = event.getAxisValue(MotionEvent.AXIS_Y);
+        int direction = y > 0.68f ? 1 : y < -0.68f ? -1 : 0;
+        if (direction == 0) {
+            if (Math.abs(y) < 0.28f) menuAxisLatch = 0;
+        } else if (menuAxisLatch == 0) {
+            menuAxisLatch = direction;
+            navigateOptions(direction);
+        }
+        return true;
     }
 
     private void setImmersive() {
@@ -106,12 +461,28 @@ public class MainActivity extends Activity {
         else if (gamepad != null) gamepad.release();
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_START &&
+            isGamepadKey(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN &&
+                event.getRepeatCount() == 0) {
+                if (optionsOpen) closeOptions();
+                else openOptions();
+            }
+            return true;
+        }
+        if (optionsOpen) return handleOptionsKey(event);
         if (gamepad != null && gamepad.handleKey(event)) return true;
         return super.dispatchKeyEvent(event);
     }
     @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (optionsOpen && (event.getSource() & InputDevice.SOURCE_JOYSTICK) != 0)
+            return handleOptionsMotion(event);
         if (gamepad != null && gamepad.handleMotion(event)) return true;
         return super.dispatchGenericMotionEvent(event);
+    }
+    @Override public void onBackPressed() {
+        if (optionsOpen) backOptions();
+        else openOptions();
     }
     @Override public void onPause() {
         backgrounded = true;
