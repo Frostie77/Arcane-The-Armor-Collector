@@ -135,6 +135,31 @@ window.arcaneControllerAim = (nx, ny) => {
     }));
   }
 };
+// Ruffle may miss Android WebView's synthetic key-up when touch input or
+// scene focus changes. An ADB-generated physical tap of W/A/S/D clears this
+// state, so reproduce each paired keydown/keyup on Ruffle's focused player
+// after the analog stick returns to neutral. Do not change active movement.
+window.arcaneClearMovementKeys = () => {
+  if (!arcanePlayer || arcaneInBackground) return;
+  try {
+    arcanePlayer.focus();
+    for (const [key, code, keyCode] of [
+      ['w', 'KeyW', 87], ['a', 'KeyA', 65],
+      ['s', 'KeyS', 83], ['d', 'KeyD', 68]
+    ]) {
+      for (const type of ['keydown', 'keyup']) {
+        arcanePlayer.dispatchEvent(new KeyboardEvent(type, {
+          key, code, keyCode, which: keyCode,
+          bubbles: true, composed: true, cancelable: true,
+          repeat: false
+        }));
+      }
+    }
+    console.info('ArcaneMovementRecovery: focused player and tapped WASD');
+  } catch (error) {
+    console.warn('ArcaneMovementRecovery: failed', error);
+  }
+};
 // Suspend Flash execution AND sound whenever the Android app is backgrounded.
 let arcanePlayer = null;
 let arcaneInBackground = false;
