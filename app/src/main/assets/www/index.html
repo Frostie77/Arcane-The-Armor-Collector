@@ -25,14 +25,38 @@ window.RufflePlayer.config = {
   allowNetworking: 'none',
   publicPath: 'ruffle/'
 };
+// Suspend Flash execution AND sound whenever the Android app is backgrounded.
+let arcanePlayer = null;
+let arcaneInBackground = false;
+window.arcaneSuspend = () => {
+  arcaneInBackground = true;
+  if (arcanePlayer) {
+    try { arcanePlayer.ruffle().suspend(); }
+    catch (e) { if (typeof arcanePlayer.pause === 'function') arcanePlayer.pause(); }
+  }
+};
+window.arcaneResume = () => {
+  arcaneInBackground = false;
+  if (arcanePlayer) {
+    try { arcanePlayer.ruffle().resume(); }
+    catch (e) { if (typeof arcanePlayer.play === 'function') arcanePlayer.play(); }
+  }
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) window.arcaneSuspend();
+  else window.arcaneResume();
+});
+window.addEventListener('pagehide', () => window.arcaneSuspend());
 window.addEventListener('DOMContentLoaded', async () => {
   const status = document.getElementById('status');
   try {
     if (!window.RufflePlayer.newest) throw Error('Ruffle runtime missing. Run prepare.ps1 first.');
     const ruffle = window.RufflePlayer.newest();
     const player = ruffle.createPlayer();
+    arcanePlayer = player;
     document.getElementById('game').appendChild(player);
     await player.ruffle().load({ url: 'arcane.swf' });
+    if (arcaneInBackground || document.hidden) window.arcaneSuspend();
     status.remove();
     player.focus();
   } catch(e) {
