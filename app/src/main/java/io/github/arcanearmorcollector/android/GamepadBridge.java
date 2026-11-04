@@ -33,10 +33,8 @@ final class GamepadBridge {
     private int movementMode = 0; // 0 = 8-way, 1 = 4-way
     private float moveThreshold = MOVE_ON;
     private boolean invertMoveX, invertMoveY;
-    // Re-send a neutral key-up after the WebView has had time to process a
-    // scene change or touch. This recovers a key release lost by Ruffle.
-    private static final long NEUTRAL_KEY_RECOVERY_MS = 55L;
-    private static final int NEUTRAL_RECOVERY_PASSES = 4;
+    // Movement has one authoritative path: a browser-side four-bit keyboard
+    // state. No native movement KeyEvents or key recovery timers.
     private final WebView webView;
     static final String[] ACTION_NAMES = {
         "Attack", "Alternate Attack", "Switch Weapon", "Swap Armour",
@@ -68,8 +66,8 @@ final class GamepadBridge {
     private boolean stickUp, stickDown, stickLeft, stickRight;
     private boolean hatUp, hatDown, hatLeft, hatRight;
     private boolean attacking;
-    private boolean pointerInitialized, loopRunning, neutralRecoveryQueued, wasMoving;
-    private int lastMovementMask, neutralRecoveryPass;
+    private boolean pointerInitialized, loopRunning;
+    private int lastMovementMask;
     private boolean nativeCursorEnabled = true;
     private boolean widescreenDisplay;
     private float pointerX, pointerY, aimX, aimY;
@@ -321,35 +319,43 @@ final class GamepadBridge {
         return hit;
     }
 
-    // HUD touches must be real DOWN/UP gestures. The old HUD handler
-    // sent both events consecutively on finger release, which Ruffle often
-    // did not register as a click. Preserve the Relative crosshair and use
-    // the normal Direct touch gesture only inside recognised HUD areas.
+    // HUD input is delivered as DOM pointer events on the Ruffle canvas.
+    // Native synthetic WebView touches were reaching pointerdown but never
+    // activating the Flash potion/options/stats clips.
     private boolean hudTouchActive;
-    private float hudSavedX, hudSavedY;
+    private float hudLastX, hudLastY;
+
+    private void dispatchHud(String type, float x, float y) {
+        if (webView.getWidth() < 1 || webView.getHeight() < 1) return;
+        float nx = x / webView.getWidth();
+        float ny = y / webView.getHeight();
+        webView.evaluateJavascript(
+            "if(window.arcaneHudPointer)window.arcaneHudPointer('" + type +
+            "'," + nx + "," + ny + ");", null);
+    }
 
     void beginTouchHud(float x, float y) {
         if (hudTouchActive || touchTrackpadAttacking || attacking) return;
         initializePointer();
         if (!pointerInitialized) return;
-        hudSavedX = pointerX;
-        hudSavedY = pointerY;
         hudTouchActive = true;
-        beginTouchDirect(x, y);
+        hudLastX = x;
+        hudLastY = y;
+        dispatchHud("down", x, y);
     }
 
     void moveTouchHud(float x, float y) {
-        if (hudTouchActive) moveTouchDirect(x, y);
+        if (!hudTouchActive) return;
+        hudLastX = x;
+        hudLastY = y;
+        dispatchHud("move", x, y);
     }
 
     void endTouchHud() {
         if (!hudTouchActive) return;
         hudTouchActive = false;
-        endTouchDirect();
-        pointerX = hudSavedX;
-        pointerY = hudSavedY;
-        clampPointer();
-        // Restore Flash-side aim only after Ruffle has consumed the mouse-up.
+        dispatchHud("up", hudLastX, hudLastY);
+        // Reset game-side mouse position only after its HUD mouse-up.
         webView.postOnAnimation(() -> {
             if (hudTouchActive || touchTrackpadAttacking || attacking ||
                 !pointerInitialized) return;
@@ -522,70 +528,21 @@ final class GamepadBridge {
     }
 
     private void updateMovement() {
-        int mask = currentMovementMask();
-        if (mask != lastMovementMask) {
-            // Release every inactive movement direction on EACH transition,
-            // even when our native key cache believes it is already up.
-            // Ruffle can drop an earlier key-up while aim touches change
-            // WebView focus, leaving a stale opposite direction pressed.
-            int[] codes = {KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_S,
-                KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_D};
-            int[] bits = {1, 2, 4, 8};
-            for (int i = 0; i < codes.length; i++) {
-                if ((mask & bits[i]) != 0) continue;
-                pressedKeys.remove(codes[i]);
-                dispatchTranslatedKey(codes[i], false);
-            }
-            for (int i = 0; i < codes.length; i++) {
-                if ((mask & bits[i]) != 0) setKey(codes[i], true);
-            }
-            Log.d(TAG, "movement-direction mask=" + mask +
-                " previous=" + lastMovementMask);
-            lastMovementMask = mask;
-        }
-
-        if (mask == 0) {
-            if (wasMoving) {
-                webView.removeCallbacks(neutralMovementRecovery);
-                neutralRecoveryQueued = true;
-                neutralRecoveryPass = 0;
-                webView.postDelayed(neutralMovementRecovery, NEUTRAL_KEY_RECOVERY_MS);
-            }
-        } else if (neutralRecoveryQueued) {
-            webView.removeCallbacks(neutralMovementRecovery);
-            neutralRecoveryQueued = false;
-            neutralRecoveryPass = 0;
-        }
-        wasMoving = mask != 0;
+        final int mask = currentMovementMask();
+        if (mask == lastMovementMask) return;
+        lastMovementMask = mask;
+        // One serialized call changes the entire movement state together.
+        // Ruffle gets DOM keyboard events on its actual focused player,
+        // not mixed native WebView dispatch and JS recovery events.
+        sendMovementMask(mask);
+        Log.d(TAG, "movement-browser-mask=" + mask);
     }
 
-    private final Runnable neutralMovementRecovery = new Runnable() {
-        @Override public void run() {
-            neutralRecoveryQueued = false;
-            // Do not release movement keys while any physical or touchscreen
-            // direction is genuinely held.
-            if (currentMovementMask() != 0) return;
-            for (int key : new int[] {
-                KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_A,
-                KeyEvent.KEYCODE_S, KeyEvent.KEYCODE_D
-            }) {
-                pressedKeys.remove(key);
-                dispatchTranslatedKey(key, false);
-            }
-            webView.evaluateJavascript(
-                "if(window.arcaneClearMovementKeys)window.arcaneClearMovementKeys();",
-                null);
-            neutralRecoveryPass++;
-            Log.d(TAG, "movement-neutral-release pass=" + neutralRecoveryPass);
-            // Repeat briefly to cover Ruffle frames that miss the first
-            // release during simultaneous touch/attack. Only key-UP events
-            // are sent; this never synthesises movement or jump presses.
-            if (neutralRecoveryPass < NEUTRAL_RECOVERY_PASSES) {
-                neutralRecoveryQueued = true;
-                webView.postDelayed(this, 90L);
-            }
-        }
-    };
+    private void sendMovementMask(int mask) {
+        webView.evaluateJavascript(
+            "if(window.arcaneSetMovementMask)window.arcaneSetMovementMask(" +
+            mask + ");", null);
+    }
 
     private void setKey(int code, boolean down) {
         if (pressedKeys.contains(code) == down) return;
@@ -719,11 +676,8 @@ final class GamepadBridge {
     };
 
     void release() {
-        webView.removeCallbacks(neutralMovementRecovery);
-        neutralRecoveryQueued = false;
-        neutralRecoveryPass = 0;
         lastMovementMask = 0;
-        wasMoving = false;
+        sendMovementMask(0);
         aimX = aimY = 0;
         physicalAimX = physicalAimY = touchAimX = touchAimY = 0;
         touchAimActive = false;
