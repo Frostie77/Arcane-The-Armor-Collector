@@ -10,10 +10,20 @@ android {
         applicationId 'io.github.arcanearmorcollector.android'
         minSdk 26
         targetSdk 35
-        versionCode 15
-        versionName '0.2.0-rc14-debug'
+        versionCode 16
+        versionName '0.2.0'
     }
     buildTypes {
+        debug {
+            // A side-by-side first-run import test never touches the user's
+            // existing Arcane Debug APK, installed data or Arcane8 saves.
+            if (project.hasProperty('arcaneImportTest')) {
+                applicationIdSuffix '.importtest'
+                versionNameSuffix '-importtest'
+            } else {
+                versionNameSuffix '-dev'
+            }
+        }
         release { minifyEnabled false }
     }
     compileOptions {
