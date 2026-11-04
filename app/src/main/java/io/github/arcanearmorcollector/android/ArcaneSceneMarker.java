@@ -20,6 +20,9 @@ final class ArcaneSceneMarker {
     private static final byte[] COMMAND =
         "FSCommand:arcanePhase".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
 
+    private static final byte[] FRAME_COMMAND =
+        "FSCommand:arcaneFrame".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+
     private ArcaneSceneMarker() {}
 
     static byte[] patch(InputStream source) throws IOException {
@@ -54,6 +57,7 @@ final class ArcaneSceneMarker {
             patched.write(plain, 0, frameHeader);
             int pos = frameHeader;
             int frame = 1, notified = 0;
+            boolean markedFrame = false;
             while (pos + 2 <= plain.length) {
                 int start = pos;
                 int record = ushort(plain, pos);
@@ -67,10 +71,22 @@ final class ArcaneSceneMarker {
                 }
                 if (length > Integer.MAX_VALUE || pos + length > plain.length)
                     return original;
-                if (tag == 1) { // ShowFrame: prepend scene marker for this root frame
-                    byte[] action = marker(frame == 20 ? "arena" : "menu");
-                    patched.write(action);
+                // Put FSCommands BEFORE original DoAction. On some scenes,
+                // the game's first DoAction transfers control to a different
+                // frame, so a marker placed after it never executes.
+                if (tag == 12 && !markedFrame) {
+                    patched.write(marker(COMMAND, frame == 20 ? "arena" : "menu"));
+                    patched.write(marker(FRAME_COMMAND, Integer.toString(frame)));
+                    markedFrame = true;
                     notified++;
+                }
+                if (tag == 1) { // ShowFrame
+                    if (!markedFrame) {
+                        patched.write(marker(COMMAND, frame == 20 ? "arena" : "menu"));
+                        patched.write(marker(FRAME_COMMAND, Integer.toString(frame)));
+                        notified++;
+                    }
+                    markedFrame = false;
                     frame++;
                 }
                 int end = pos + (int) length;
@@ -95,14 +111,14 @@ final class ArcaneSceneMarker {
         }
     }
 
-    private static byte[] marker(String phase) throws IOException {
-        // AVM1 ActionGetURL("FSCommand:arcanePhase", phase), ActionEnd.
+    private static byte[] marker(byte[] command, String phase) throws IOException {
+        // AVM1 ActionGetURL("FSCommand:arcanePhase/arcaneFrame", value), ActionEnd.
         ByteArrayOutputStream action = new ByteArrayOutputStream();
-        int payloadLength = COMMAND.length + 1 + phase.length() + 1;
+        int payloadLength = command.length + 1 + phase.length() + 1;
         action.write(0x83);
         action.write(payloadLength & 255);
         action.write(payloadLength >>> 8);
-        action.write(COMMAND);
+        action.write(command);
         action.write(0);
         action.write(phase.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
         action.write(0);
