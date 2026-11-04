@@ -40,73 +40,7 @@ function Confirm-GameFree($file) {
     $archive = [System.IO.Compression.ZipFile]::OpenRead($file)
     try {
         $names = @($archive.Entries | ForEach-Object { $_.FullName })
-        if (@($names | Where-Object { $_ -match '\.swf }).Count -gt 0)
-            { throw "SAFETY CHECK FAILED: Game SWF found inside $file" }
-        if (-not ($names -contains 'assets/www/ruffle/ruffle.js'))
-            { throw 'Ruffle is missing from the release APK.' }
-        if (-not ($names -contains 'assets/www/index.html'))
-            { throw 'Wrapper HTML is missing from the release APK.' }
-    } finally {
-        $archive.Dispose()
-    }
-}
-
-$moved = $false
-$movedRes = $false
-try {
-    if (Test-Path $game) {
-        New-Item -ItemType Directory -Path $privateFolder -Force | Out-Null
-        Move-Item -LiteralPath $game -Destination $held
-        $moved = $true
-    }
-
-    # Isolate personal local launcher art and package only the new source icon.
-    New-Item -ItemType Directory -Path $privateFolder -Force | Out-Null
-    Move-Item -LiteralPath $resFolder -Destination $heldRes
-    $movedRes = $true
-    New-Item -ItemType Directory -Path (Join-Path $resFolder 'drawable') -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $heldRes 'drawable\ic_arcane_launcher.xml') -Destination (Join-Path $resFolder 'drawable\ic_arcane_launcher.xml')
-    & $gradle clean assembleRelease
-    if ($LASTEXITCODE -ne 0) { throw 'Release compilation failed.' }
-    if (-not (Test-Path $unsigned)) { throw 'Unsigned release APK not found.' }
-    Confirm-GameFree $unsigned
-} finally {
-    if ($movedRes) {
-        if (Test-Path $resFolder) { Remove-Item -LiteralPath $resFolder -Recurse -Force }
-        Move-Item -LiteralPath $heldRes -Destination $resFolder
-        Write-Host 'PASS: original local resources restored.'
-    }
-    if ($moved) {
-        Move-Item -LiteralPath $held -Destination $game
-        Write-Host 'PASS: personal game SWF restored.'
-    }
-}
-
-if (-not (Test-Path $keystore)) {
-    New-Item -ItemType Directory -Path (Split-Path $keystore) -Force | Out-Null
-    Write-Host 'Create your permanent Android release signing key. Remember its password.'
-    & $keytool -genkeypair -keystore $keystore -alias arcane-release -keyalg RSA -keysize 3072 -validity 10000 -storetype PKCS12 -dname 'CN=Arcane Android Release'
-    if ($LASTEXITCODE -ne 0) { throw 'Release signing key creation failed.' }
-}
-if (Test-Path $aligned) { Remove-Item $aligned -Force }
-if (Test-Path $signed) { Remove-Item $signed -Force }
-
-& $zipalign -p -f 4 $unsigned $aligned
-if ($LASTEXITCODE -ne 0) { throw 'zipalign failed.' }
-Write-Host 'Sign the release using your permanent keystore password when prompted.'
-& $apksigner sign --ks $keystore --ks-key-alias arcane-release --out $signed $aligned
-if ($LASTEXITCODE -ne 0) { throw 'Release APK signing failed.' }
-& $apksigner verify --verbose --print-certs $signed
-if ($LASTEXITCODE -ne 0) { throw 'Release APK signature verification failed.' }
-Confirm-GameFree $signed
-Remove-Item $aligned -Force
-$hash = (Get-FileHash -Algorithm SHA256 $signed).Hash.ToLowerInvariant()
-Set-Content -Path (Join-Path $releaseDir 'Arcane-v0.2.0-Android.sha256.txt') -Value "$hash  Arcane-v0.2.0-Android.apk"
-Write-Host 'PASS: SIGNED AND GAME-FREE PUBLIC APK'
-Write-Host "APK: $signed"
-Write-Host "SHA256: $hash"
-Write-Host "Keep the keystore safe: $keystore"
- }).Count -gt 0)
+        if (@($names | Where-Object { $_ -match '\.swf$' }).Count -gt 0)
             { throw "SAFETY CHECK FAILED: Game SWF found inside $file" }
         if (-not ($names -contains 'assets/www/ruffle/ruffle.js'))
             { throw 'Ruffle is missing from the release APK.' }
