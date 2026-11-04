@@ -21,6 +21,7 @@ final class TouchControlsOverlay extends FrameLayout {
     private float scale = 1f;
     private boolean swapped;
     private boolean useDpad, relativeAim = true;
+    private boolean gamePhaseKnown, gameArena;
     private int insetDp = 18;
 
     private AxisPad movePad;
@@ -64,6 +65,13 @@ final class TouchControlsOverlay extends FrameLayout {
             rebuild();
         }
         setAlpha(opacity);
+    }
+
+    void setGameScene(boolean known, boolean arena) {
+        if (gamePhaseKnown == known && gameArena == arena) return;
+        releaseAll();
+        gamePhaseKnown = known;
+        gameArena = arena;
     }
 
     @Override public void setVisibility(int visibility) {
@@ -134,17 +142,16 @@ final class TouchControlsOverlay extends FrameLayout {
     }
 
     private final class AimSurface extends View {
-        // The Flash game does not expose its inventory/arena state to the
-        // Android wrapper. In user-selected Relative mode, treat a short tap
-        // as a direct menu click while a swipe or hold operates the existing
-        // relative crosshair. This avoids relying on an unreliable timer
-        // guessing when an arena begins.
-        private static final long HOLD_TO_RELATIVE_MS = 260L;
-        private int activePointer = -1;
+        // 0 = Direct (inventory/menu or user preference)
+        // 1 = Relative (arena, user preference)
+        // 2 = Adaptive fallback if a local SWF does not expose scene markers.
+        private int gestureMode, activePointer = -1;
         private float lastX, lastY, downX, downY;
         private boolean relativeGestureStarted;
+        private static final long HOLD_TO_RELATIVE_MS = 260L;
+
         private final Runnable holdToRelative = () -> {
-            if (activePointer != -1 && relativeAim && !relativeGestureStarted) {
+            if (activePointer != -1 && gestureMode == 2 && !relativeGestureStarted) {
                 relativeGestureStarted = true;
                 bridge.beginTouchTrackpad();
             }
@@ -153,31 +160,33 @@ final class TouchControlsOverlay extends FrameLayout {
         AimSurface(Context context) {
             super(context);
             setClickable(true);
-            setContentDescription(relativeAim ?
-                "Tap to select menus; swipe or hold to aim and fire" :
-                "Tap or drag to aim directly and fire");
+            setContentDescription("Direct inventory touch; relative arena aim and attack");
+        }
+
+        private int selectMode() {
+            if (!relativeAim) return 0;
+            if (!gamePhaseKnown) return 2;
+            return gameArena ? 1 : 0;
         }
 
         void reset() {
             removeCallbacks(holdToRelative);
-            if (activePointer == -1) return;
+            if (activePointer < 0) return;
+            if (gestureMode == 0) bridge.endTouchDirect();
+            else if (relativeGestureStarted) bridge.endTouchTrackpad();
             activePointer = -1;
-            if (relativeAim) {
-                if (relativeGestureStarted) bridge.endTouchTrackpad();
-            } else {
-                bridge.endTouchDirect();
-            }
             relativeGestureStarted = false;
         }
 
         private void finish(boolean commitTap, float x, float y) {
             removeCallbacks(holdToRelative);
             if (activePointer < 0) return;
-            if (relativeAim) {
-                if (relativeGestureStarted) bridge.endTouchTrackpad();
-                else if (commitTap) bridge.tapTouchDirect(x, y);
-            } else {
+            if (gestureMode == 0) {
                 bridge.endTouchDirect();
+            } else if (relativeGestureStarted) {
+                bridge.endTouchTrackpad();
+            } else if (gestureMode == 2 && commitTap) {
+                bridge.tapTouchDirect(x, y);
             }
             activePointer = -1;
             relativeGestureStarted = false;
@@ -189,17 +198,26 @@ final class TouchControlsOverlay extends FrameLayout {
                     activePointer = event.getPointerId(0);
                     downX = lastX = event.getX(0);
                     downY = lastY = event.getY(0);
+                    gestureMode = selectMode();
                     relativeGestureStarted = false;
-                    if (relativeAim) postDelayed(holdToRelative, HOLD_TO_RELATIVE_MS);
-                    else bridge.beginTouchDirect(lastX, lastY);
+                    if (gestureMode == 0) {
+                        bridge.beginTouchDirect(lastX, lastY);
+                    } else if (gestureMode == 1) {
+                        relativeGestureStarted = true;
+                        bridge.beginTouchTrackpad();
+                    } else {
+                        postDelayed(holdToRelative, HOLD_TO_RELATIVE_MS);
+                    }
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     if (activePointer >= 0) {
                         int index = event.findPointerIndex(activePointer);
                         if (index >= 0) {
                             float x = event.getX(index), y = event.getY(index);
-                            if (relativeAim) {
-                                if (!relativeGestureStarted &&
+                            if (gestureMode == 0) {
+                                bridge.moveTouchDirect(x, y);
+                            } else {
+                                if (gestureMode == 2 && !relativeGestureStarted &&
                                     Math.hypot(x - downX, y - downY) >= dp(11)) {
                                     removeCallbacks(holdToRelative);
                                     relativeGestureStarted = true;
@@ -207,8 +225,6 @@ final class TouchControlsOverlay extends FrameLayout {
                                 }
                                 if (relativeGestureStarted)
                                     bridge.moveTouchTrackpad(x - lastX, y - lastY);
-                            } else {
-                                bridge.moveTouchDirect(x, y);
                             }
                             lastX = x;
                             lastY = y;
