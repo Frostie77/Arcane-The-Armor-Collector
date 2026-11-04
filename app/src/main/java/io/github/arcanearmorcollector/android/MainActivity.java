@@ -729,6 +729,8 @@ public class MainActivity extends Activity {
         });
         sharedFrontend.setAdapter(new FrostFrontendView.Adapter() {
             @Override public List<FrostFrontendView.Item> itemsForTab(String tabId) {
+                // Leaving Controls must not strand a game-specific submenu.
+                if (!"controls".equals(tabId)) showingMovementControls = false;
                 switch (tabId) {
                     case "graphics":
                         optionsTab = 0;
