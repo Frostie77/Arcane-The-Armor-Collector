@@ -58,6 +58,9 @@ final class GamepadBridge {
     private final Set<Integer> pressedKeys = new HashSet<>();
     private boolean keyUp, keyDown, keyLeft, keyRight;
     private boolean touchUp, touchDown, touchLeft, touchRight;
+    // The virtual D-pad sends discrete directions without analogue tuning.
+    private boolean touchDpadUp, touchDpadDown, touchDpadLeft, touchDpadRight;
+    private boolean touchTrackpadAttacking;
     private final boolean[] touchActionsDown = new boolean[ACTION_NAMES.length];
     private float physicalAimX, physicalAimY, touchAimX, touchAimY;
     private boolean touchAimActive;
@@ -229,6 +232,48 @@ final class GamepadBridge {
         updateMovement();
     }
 
+    void setTouchDpad(boolean up, boolean down, boolean left, boolean right) {
+        if (touchDpadUp == up && touchDpadDown == down &&
+            touchDpadLeft == left && touchDpadRight == right) return;
+        touchDpadUp = up;
+        touchDpadDown = down;
+        touchDpadLeft = left;
+        touchDpadRight = right;
+        updateMovement();
+    }
+
+    // Relative touch aiming is like a laptop trackpad. The first touch
+    // doesn't warp the cursor to the finger's location: each subsequent
+    // move changes the existing crosshair position.
+    void beginTouchTrackpad() {
+        initializePointer();
+        if (!pointerInitialized) return;
+        touchAimActive = true;
+        touchAimX = touchAimY = 0f;
+        updateAimFromSources();
+        touchTrackpadAttacking = true;
+        updateMappedButtons();
+    }
+
+    void moveTouchTrackpad(float deltaX, float deltaY) {
+        if (!touchTrackpadAttacking || !pointerInitialized) return;
+        float gain = Math.max(0.65f, Math.min(2.5f, aimSensitivity * 1.35f));
+        pointerX += deltaX * gain;
+        pointerY += deltaY * gain;
+        clampPointer();
+        if (attacking) sendPointer(MotionEvent.ACTION_MOVE);
+        else sendHover();
+    }
+
+    void endTouchTrackpad() {
+        if (!touchTrackpadAttacking) return;
+        touchTrackpadAttacking = false;
+        updateMappedButtons();
+        touchAimActive = false;
+        touchAimX = touchAimY = 0f;
+        updateAimFromSources();
+    }
+
     private void applyStickDirection(float x, float y, boolean touch) {
         if (invertMoveX) x = -x;
         if (invertMoveY) y = -y;
@@ -297,6 +342,8 @@ final class GamepadBridge {
 
     void releaseTouchControls() {
         touchUp = touchDown = touchLeft = touchRight = false;
+        touchDpadUp = touchDpadDown = touchDpadLeft = touchDpadRight = false;
+        touchTrackpadAttacking = false;
         touchAimActive = false;
         touchAimX = touchAimY = 0f;
         for (int i = 0; i < touchActionsDown.length; i++) touchActionsDown[i] = false;
@@ -311,10 +358,10 @@ final class GamepadBridge {
     }
 
     private void updateMovement() {
-        boolean up = keyUp || stickUp || hatUp || touchUp;
-        boolean down = keyDown || stickDown || hatDown || touchDown;
-        boolean left = keyLeft || stickLeft || hatLeft || touchLeft;
-        boolean right = keyRight || stickRight || hatRight || touchRight;
+        boolean up = keyUp || stickUp || hatUp || touchUp || touchDpadUp;
+        boolean down = keyDown || stickDown || hatDown || touchDown || touchDpadDown;
+        boolean left = keyLeft || stickLeft || hatLeft || touchLeft || touchDpadLeft;
+        boolean right = keyRight || stickRight || hatRight || touchRight || touchDpadRight;
         // Release old directions BEFORE pressing replacements so the Flash
         // game cannot briefly see contradictory movement keys held.
         if (!up) setKey(KeyEvent.KEYCODE_W, false);
@@ -348,7 +395,8 @@ final class GamepadBridge {
             if (keyUp || keyDown || keyLeft || keyRight ||
                 stickUp || stickDown || stickLeft || stickRight ||
                 hatUp || hatDown || hatLeft || hatRight ||
-                touchUp || touchDown || touchLeft || touchRight) return;
+                touchUp || touchDown || touchLeft || touchRight ||
+                touchDpadUp || touchDpadDown || touchDpadLeft || touchDpadRight) return;
             for (int key : new int[] {
                 KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_A,
                 KeyEvent.KEYCODE_S, KeyEvent.KEYCODE_D
@@ -452,8 +500,8 @@ final class GamepadBridge {
         setKey(KeyEvent.KEYCODE_E, touchActionsDown[4] || isButtonDown(bindings[4]));
         setKey(KeyEvent.KEYCODE_R, touchActionsDown[5] || isButtonDown(bindings[5]));
         setKey(KeyEvent.KEYCODE_T, touchActionsDown[6] || isButtonDown(bindings[6]));
-        boolean desired = touchActionsDown[0] || touchActionsDown[1] ||
-            isButtonDown(bindings[0]) || isButtonDown(bindings[1]);
+        boolean desired = touchTrackpadAttacking || touchActionsDown[0] ||
+            touchActionsDown[1] || isButtonDown(bindings[0]) || isButtonDown(bindings[1]);
         if (desired != attacking) {
             attacking = desired;
             sendPointer(desired ? MotionEvent.ACTION_DOWN : MotionEvent.ACTION_UP);
@@ -505,6 +553,8 @@ final class GamepadBridge {
         physicalAimX = physicalAimY = touchAimX = touchAimY = 0;
         touchAimActive = false;
         touchUp = touchDown = touchLeft = touchRight = false;
+        touchDpadUp = touchDpadDown = touchDpadLeft = touchDpadRight = false;
+        touchTrackpadAttacking = false;
         for (int i = 0; i < touchActionsDown.length; i++) touchActionsDown[i] = false;
         loopRunning = false;
         lastScriptAimTime = 0;
