@@ -149,3 +149,14 @@ The user reported that touching anywhere in a Relative-mode arena caused the fig
 - Direct click-through in the arena is limited to the original 640x480 stage's **upper HUD band** (where its HUD and menu widgets are drawn) and the three known bottom-right **potion buttons** (original SWF HUD children `pb3`, `pb2`, `pb1` at x 508/552/596 and y 443). Coordinates are scaled for 4:3 or Stretch. Exact HUD hit regions still require a device usability check; the upper band is intentionally conservative about crosshair behavior but remains a coarse region.
 - After a HUD tap, the Android pointer and Ruffle's synthetic aim are both restored to the stored relative crosshair; this avoids leaving the fighter facing the selected HUD button.
 - Scene transition notifications and the verified functioning `Arcane8` save mechanism remain unchanged. This is an unverified on-device debug candidate, not a completed release.
+
+
+### v0.2.0-rc10-debug: HUD routing and movement key recovery
+
+**On-device issue:** Relative aiming and the Arcane8 save persist correctly, but combat potion/stats/options taps were not activating and the character sometimes moved without input or briefly against the requested movement direction.
+
+- The original Flash SWF declares a 640×480 game stage. Its HUD sprite places potion children `pb3`/`pb2`/`pb1` at approximately (508,443), (552,443), (596,443), and its stats/options movieclips at approximately (205,206)/(335,207). Those are HUD-sprite local coordinates; an on-device screenshot is needed to confirm the clickable subclip positions if any hit area still misses.
+- Added a **full-screen but pass-through HUD touch layer drawn above the virtual action buttons**. It intercepts only recognized HUD regions while Relative arena mode is active, leaving normal movement, aim gestures and explicit Direct mode alone. The old virtual action buttons could obscure potion hits.
+- HUD input now sends a real touch DOWN when the player places a finger and an UP when they release, instead of issuing DOWN/UP immediately at the end of a tap. It restores the existing native/Ruffle relative aim after the HUD click. Other short taps continue firing at the saved crosshair.
+- Gamepad movement now unconditionally releases every inactive movement key on direction changes, even if its own cache thinks the key was already released. After the controls become neutral, it resends **only** key-up events across four short, guarded passes. This is designed to recover releases that Ruffle loses while handling simultaneous game-screen touches; it never synthesises movement key-downs.
+- Added `ArcaneHUD` hit/miss stage-coordinate log lines and `ArcaneGamepad` direction/recovery lines for diagnosis if either behaviour remains wrong. The proven Arcane8 save-flush and scene switching logic were not changed. Device verification is pending; this is not a public release.
