@@ -2,5 +2,16 @@
   "schema_version": 1,
   "channel": "stable",
   "package": "io.github.arcanearmorcollector.android",
-  "latest": null
+  "latest": {
+    "package": "io.github.arcanearmorcollector.android",
+    "version_name": "0.2.0",
+    "version_code": 16,
+    "release_tag": "v0.2.0",
+    "source_commit": "996046f6a9b38f037f7820ae95fdc80f0199e755",
+    "certificate_sha256": "cb9b760357f4bf66a4f63ccf8cd984980e667e4b5a2a7e860b9d321acbbc577a",
+    "min_sdk": 26,
+    "apk_asset": "Arcane-v0.2.0-Android.apk",
+    "apk_size": 30311147,
+    "apk_sha256": "4399c7593ca3b215dad022d27c0598bc6a3fc8e10faf6a9aaf0f9ea435cea3e9"
+  }
 }
