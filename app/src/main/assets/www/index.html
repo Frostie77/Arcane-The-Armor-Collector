@@ -250,6 +250,20 @@ window.addEventListener('DOMContentLoaded', async () => {
     const ruffle = window.RufflePlayer.newest();
     const player = ruffle.createPlayer();
     arcanePlayer = player;
+    // The Android wrapper adds FSCommand scene markers to the local SWF in
+    // memory, without altering it on disk. Frame 20 is arena gameplay,
+    // while the other main timeline frames are menus / equipment / results.
+    player.onFSCommand = (command, args) => {
+      if (command !== 'arcanePhase') return;
+      const phase = args === 'arena' ? 'arena' : 'menu';
+      console.info('ArcanePhase: ' + phase);
+      try {
+        if (window.ArcaneHost && typeof window.ArcaneHost.reportPhase === 'function')
+          window.ArcaneHost.reportPhase(phase);
+      } catch (e) {
+        console.warn('ArcanePhase: failed to report scene', e);
+      }
+    };
     document.getElementById('game').appendChild(player);
     await player.ruffle().load({ url: 'arcane.swf' });
     if (arcaneInBackground || document.hidden) window.arcaneSuspend();
