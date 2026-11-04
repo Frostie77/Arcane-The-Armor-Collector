@@ -27,6 +27,7 @@ final class TouchControlsOverlay extends FrameLayout {
     private AxisPad movePad;
     private DirectionPad directionPad;
     private AimSurface aimSurface;
+    private CombatHudLayer combatHudLayer;
     private ActionButton[] buttons;
 
     TouchControlsOverlay(Context context, GamepadBridge bridge) {
@@ -83,6 +84,7 @@ final class TouchControlsOverlay extends FrameLayout {
         if (movePad != null) movePad.reset();
         if (directionPad != null) directionPad.reset();
         if (aimSurface != null) aimSurface.reset();
+        if (combatHudLayer != null) combatHudLayer.reset();
         if (buttons != null) {
             for (ActionButton button : buttons) if (button != null) button.reset();
         }
@@ -138,6 +140,58 @@ final class TouchControlsOverlay extends FrameLayout {
         for (int i = 0; i < names.length; i++) {
             buttons[i] = new ActionButton(getContext(), i + 2, names[i]);
             positionButton(buttons[i], actionSide, i * 50, 16, 44);
+        }
+        // The invisible HUD hit layer MUST be drawn last: potion icons can
+        // overlap the virtual action buttons at the bottom right. This
+        // layer consumes only known HUD touches; all other gestures pass
+        // through to normal movement, buttons or Relative aiming.
+        combatHudLayer = new CombatHudLayer(getContext());
+        addView(combatHudLayer, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private final class CombatHudLayer extends View {
+        private int pointer = -1;
+
+        CombatHudLayer(Context context) {
+            super(context);
+            setClickable(false);
+            setFocusable(false);
+            setContentDescription("Direct game HUD controls during Relative combat");
+        }
+
+        void reset() {
+            if (pointer < 0) return;
+            pointer = -1;
+            bridge.endTouchHud();
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    float x = event.getX(0), y = event.getY(0);
+                    if (!relativeAim || !gamePhaseKnown || !gameArena ||
+                        !bridge.isCombatHudTouch(x, y)) return false;
+                    pointer = event.getPointerId(0);
+                    bridge.beginTouchHud(x, y);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (pointer >= 0) {
+                        int index = event.findPointerIndex(pointer);
+                        if (index >= 0)
+                            bridge.moveTouchHud(event.getX(index), event.getY(index));
+                        return true;
+                    }
+                    return false;
+                case MotionEvent.ACTION_POINTER_UP:
+                    if (pointer == event.getPointerId(event.getActionIndex())) reset();
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    reset();
+                    return true;
+                default:
+                    return pointer >= 0;
+            }
         }
     }
 
