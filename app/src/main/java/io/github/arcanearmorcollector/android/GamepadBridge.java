@@ -52,6 +52,10 @@ final class GamepadBridge {
 
     private final Set<Integer> pressedKeys = new HashSet<>();
     private boolean keyUp, keyDown, keyLeft, keyRight;
+    private boolean touchUp, touchDown, touchLeft, touchRight;
+    private final boolean[] touchActionsDown = new boolean[ACTION_NAMES.length];
+    private float physicalAimX, physicalAimY, touchAimX, touchAimY;
+    private boolean touchAimActive;
     private boolean stickUp, stickDown, stickLeft, stickRight;
     private boolean hatUp, hatDown, hatLeft, hatRight;
     private boolean attacking;
@@ -186,17 +190,13 @@ final class GamepadBridge {
         float rx = event.getAxisValue(MotionEvent.AXIS_RX);
         float ry = event.getAxisValue(MotionEvent.AXIS_RY);
         if (Math.abs(zx) + Math.abs(zy) > 0.01f || Math.abs(rx) + Math.abs(ry) <= 0.01f) {
-            aimX = deadzone(zx);
-            aimY = deadzone(zy);
+            physicalAimX = deadzone(zx);
+            physicalAimY = deadzone(zy);
         } else {
-            aimX = deadzone(rx);
-            aimY = deadzone(ry);
+            physicalAimX = deadzone(rx);
+            physicalAimY = deadzone(ry);
         }
-        if ((aimX != 0 || aimY != 0) && !loopRunning) {
-            loopRunning = true;
-            lastFrameTime = SystemClock.uptimeMillis();
-            webView.postOnAnimation(aimLoop);
-        }
+        updateAimFromSources();
 
         rightTriggerAxisDown = Math.max(event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
             event.getAxisValue(MotionEvent.AXIS_GAS)) > 0.5f;
@@ -210,15 +210,62 @@ final class GamepadBridge {
         return Math.abs(value) <= DEADZONE ? 0 : value;
     }
 
+    void setTouchMovement(float x, float y) {
+        touchLeft = x < -0.36f;
+        touchRight = x > 0.36f;
+        touchUp = y < -0.36f;
+        touchDown = y > 0.36f;
+        updateMovement();
+    }
+
+    void setTouchAim(float x, float y, boolean active) {
+        touchAimActive = active;
+        touchAimX = Math.abs(x) < DEADZONE ? 0f : x;
+        touchAimY = Math.abs(y) < DEADZONE ? 0f : y;
+        updateAimFromSources();
+    }
+
+    void setTouchAction(int action, boolean down) {
+        if (action < 0 || action >= touchActionsDown.length) return;
+        if (touchActionsDown[action] == down) return;
+        touchActionsDown[action] = down;
+        updateMappedButtons();
+    }
+
+    private void updateAimFromSources() {
+        aimX = touchAimActive ? touchAimX : physicalAimX;
+        aimY = touchAimActive ? touchAimY : physicalAimY;
+        if ((aimX != 0 || aimY != 0) && !loopRunning) {
+            loopRunning = true;
+            lastFrameTime = SystemClock.uptimeMillis();
+            webView.postOnAnimation(aimLoop);
+        }
+    }
+
+    void releaseTouchControls() {
+        touchUp = touchDown = touchLeft = touchRight = false;
+        touchAimActive = false;
+        touchAimX = touchAimY = 0f;
+        for (int i = 0; i < touchActionsDown.length; i++) touchActionsDown[i] = false;
+        updateAimFromSources();
+        updateMovement();
+        updateMappedButtons();
+    }
+
+    void showTouchCursor() {
+        initializePointer();
+        if (pointerInitialized) clampPointer();
+    }
+
     private static boolean movementActive(float value, boolean alreadyHeld) {
         return value > (alreadyHeld ? MOVE_OFF : MOVE_ON);
     }
 
     private void updateMovement() {
-        boolean up = keyUp || stickUp || hatUp;
-        boolean down = keyDown || stickDown || hatDown;
-        boolean left = keyLeft || stickLeft || hatLeft;
-        boolean right = keyRight || stickRight || hatRight;
+        boolean up = keyUp || stickUp || hatUp || touchUp;
+        boolean down = keyDown || stickDown || hatDown || touchDown;
+        boolean left = keyLeft || stickLeft || hatLeft || touchLeft;
+        boolean right = keyRight || stickRight || hatRight || touchRight;
         // Release old directions BEFORE pressing replacements so the Flash
         // game cannot briefly see contradictory movement keys held.
         if (!up) setKey(KeyEvent.KEYCODE_W, false);
@@ -251,7 +298,8 @@ final class GamepadBridge {
             neutralRecoveryQueued = false;
             if (keyUp || keyDown || keyLeft || keyRight ||
                 stickUp || stickDown || stickLeft || stickRight ||
-                hatUp || hatDown || hatLeft || hatRight) return;
+                hatUp || hatDown || hatLeft || hatRight ||
+                touchUp || touchDown || touchLeft || touchRight) return;
             for (int key : new int[] {
                 KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_A,
                 KeyEvent.KEYCODE_S, KeyEvent.KEYCODE_D
@@ -343,18 +391,20 @@ final class GamepadBridge {
     }
 
     private boolean isButtonDown(int code) {
+        if (code == UNMAPPED) return false;
         return hardwareButtonsDown.contains(code) ||
             (code == KeyEvent.KEYCODE_BUTTON_R2 && rightTriggerAxisDown) ||
             (code == KeyEvent.KEYCODE_BUTTON_L2 && leftTriggerAxisDown);
     }
 
     private void updateMappedButtons() {
-        setKey(KeyEvent.KEYCODE_SPACE, isButtonDown(bindings[2]));
-        setKey(KeyEvent.KEYCODE_B, isButtonDown(bindings[3]));
-        setKey(KeyEvent.KEYCODE_E, isButtonDown(bindings[4]));
-        setKey(KeyEvent.KEYCODE_R, isButtonDown(bindings[5]));
-        setKey(KeyEvent.KEYCODE_T, isButtonDown(bindings[6]));
-        boolean desired = isButtonDown(bindings[0]) || isButtonDown(bindings[1]);
+        setKey(KeyEvent.KEYCODE_SPACE, touchActionsDown[2] || isButtonDown(bindings[2]));
+        setKey(KeyEvent.KEYCODE_B, touchActionsDown[3] || isButtonDown(bindings[3]));
+        setKey(KeyEvent.KEYCODE_E, touchActionsDown[4] || isButtonDown(bindings[4]));
+        setKey(KeyEvent.KEYCODE_R, touchActionsDown[5] || isButtonDown(bindings[5]));
+        setKey(KeyEvent.KEYCODE_T, touchActionsDown[6] || isButtonDown(bindings[6]));
+        boolean desired = touchActionsDown[0] || touchActionsDown[1] ||
+            isButtonDown(bindings[0]) || isButtonDown(bindings[1]);
         if (desired != attacking) {
             attacking = desired;
             sendPointer(desired ? MotionEvent.ACTION_DOWN : MotionEvent.ACTION_UP);
@@ -403,6 +453,10 @@ final class GamepadBridge {
         neutralRecoveryQueued = false;
         wasMoving = false;
         aimX = aimY = 0;
+        physicalAimX = physicalAimY = touchAimX = touchAimY = 0;
+        touchAimActive = false;
+        touchUp = touchDown = touchLeft = touchRight = false;
+        for (int i = 0; i < touchActionsDown.length; i++) touchActionsDown[i] = false;
         loopRunning = false;
         lastScriptAimTime = 0;
         webView.removeCallbacks(aimLoop);
