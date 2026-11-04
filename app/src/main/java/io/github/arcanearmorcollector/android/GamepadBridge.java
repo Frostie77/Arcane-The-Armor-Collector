@@ -285,6 +285,27 @@ final class GamepadBridge {
         updateMappedButtons();
     }
 
+    // Keep the arena Relative except for clickable game HUD chrome.
+    // Positions below come from the original SWF's 640x480 HUD sprite:
+    // top controls occupy the small upper HUD strip; the three potions
+    // are centred at x=508, 552 and 596, y=443 in stage coordinates.
+    // Compute stage-relative position so both 4:3 and Stretch work.
+    boolean isCombatHudTouch(float x, float y) {
+        float vw = webView.getWidth(), vh = webView.getHeight();
+        if (vw <= 0f || vh <= 0f) return false;
+        float stageW = widescreenDisplay ? vw : Math.min(vw, vh * 4f / 3f);
+        float stageH = widescreenDisplay ? vh : Math.min(vh, vw * 3f / 4f);
+        float gx = (x - (vw - stageW) * 0.5f) * 640f / stageW;
+        float gy = (y - (vh - stageH) * 0.5f) * 480f / stageH;
+        if (gx < 0 || gx > 640 || gy < 0 || gy > 480) return false;
+        boolean topHud = gy <= 102f; // stats/options and other upper HUD icons
+        boolean potionHud = gy >= 413f && gy <= 478f &&
+            (Math.abs(gx - 508f) <= 25f ||
+             Math.abs(gx - 552f) <= 25f ||
+             Math.abs(gx - 596f) <= 25f);
+        return topHud || potionHud;
+    }
+
     void tapTouchDirect(float x, float y) {
         initializePointer();
         if (!pointerInitialized || attacking || touchTrackpadAttacking) return;
@@ -297,6 +318,18 @@ final class GamepadBridge {
         pointerX = savedX;
         pointerY = savedY;
         clampPointer();
+        // The original game reads the mouse position for facing even
+        // after a click finishes. Restore its Ruffle-side pointer to the
+        // saved Relative crosshair, not just the native overlay cursor.
+        webView.postOnAnimation(() -> {
+            if (!pointerInitialized || touchTrackpadAttacking || attacking) return;
+            sendHover();
+            float nx = pointerX / Math.max(1, webView.getWidth());
+            float ny = pointerY / Math.max(1, webView.getHeight());
+            webView.evaluateJavascript(
+                "if(window.arcaneControllerAim)window.arcaneControllerAim(" +
+                nx + "," + ny + ");", null);
+        });
     }
 
     void moveTouchDirect(float x, float y) {
