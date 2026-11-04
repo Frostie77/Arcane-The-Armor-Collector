@@ -309,7 +309,11 @@ public class MainActivity extends Activity {
         int visibility = visible ? View.VISIBLE : View.GONE;
         if (touchControls.getVisibility() != visibility)
             touchControls.setVisibility(visibility);
-        if (visible) gamepad.showTouchCursor();
+        // Direct touch mode should not leave an unrelated controller crosshair
+        // sitting over the Flash game. Restore it when relative aiming or
+        // physical controller-only play resumes.
+        gamepad.setNativeCursorEnabled(!visible || touchRelativeAim);
+        if (visible && touchRelativeAim) gamepad.showTouchCursor();
     }
 
     private void saveMovementPreferences() {
