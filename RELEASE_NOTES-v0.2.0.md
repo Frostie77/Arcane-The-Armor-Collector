@@ -1,51 +1,42 @@
-# Arcane: The Armor Collector - Android v0.2.0
+# Arcane: The Armor Collector — Android v0.2.0
 
-> Draft release notes. Publish after the game-free import test and signed APK verification pass.
+The first public Android release of **Arcane: The Armor Collector**, powered by Ruffle.
 
-An unofficial Android wrapper for the original Flash game, built with Ruffle and Android WebView. Not affiliated with the original game's creators or the Ruffle project.
+Play this classic Flash game on Android with **gamepad and touchscreen controls**, a custom launcher icon and our new **FrostFrontend** settings interface. Developed and tested on the AYN Odin 2 Portal.
 
 ## What's included
 
-- Native Android landscape gameplay, with offline Ruffle playback.
-- AYN Odin 2 Portal gamepad controls and configurable button mapping.
-- Touchscreen joystick or D-pad, Relative/Direct aiming and touch action controls.
-- Tap access to the game's potion, stats and options HUD without unintended aiming.
-- FrostFrontend settings: Graphics, Controls, Touch Settings and a compact menu layout.
-- Original 4:3 or Stretch to Screen display.
-- Persistent settings and Arcane8 Flash save data.
-- Native speaker check (Left / Right / Both) for troubleshooting.
-- **Updates** heading in FrostFrontend: installed/latest version, manual check, automatic checks on launch, and a verified GitHub release page link. Notices appear when in menus, not combat.
-- Custom launcher icon created for the Android port.
+- Gamepad controls with remappable buttons and aiming options.
+- Touchscreen joystick or D-pad, aiming and on-screen action controls.
+- Persistent game saves and settings.
+- Original 4:3 or stretched widescreen display.
+- **FrostFrontend** with four sections:
+  - **Graphics** — display modes and speaker test.
+  - **Controls** — gamepad remapping, movement and aiming options.
+  - **Touch Settings** — touch layout, size, opacity and aiming.
+  - **Updates** — current version, manual checks and automatic update notifications.
 
-## First launch: import your own game file
+Updates link to the verified GitHub release page; installation is always your choice.
 
-**This APK does not contain the original game.** Copy your legally obtained Arcane: The Armor Collector Flash `.swf` file onto your Android device. Start the APK, select **Select Game File**, and choose the file using Android's document picker. The app copies it into its private storage. You only need to import it once.
+## Installation
 
-### Where to get Arcane.swf
+1. Download and install **Arcane-v0.2.0-Android.apk** below.
+2. Download your own [original Arcane SWF from Newgrounds](https://uploads.ungrounded.net/442000/442706_Arcane.swf), or use another lawfully obtained copy.
+3. Put the SWF in your device's Downloads folder.
+4. Open the app, tap **Select Game File**, and import the SWF.
 
-The original game was uploaded by Hadar1989 to Newgrounds. Obtain it directly from the original game's host rather than from this repository:
+The game file is remembered for future launches. No renaming is required.
 
-- **[Download original Arcane SWF (Newgrounds)](https://uploads.ungrounded.net/442000/442706_Arcane.swf)**
-- [Original Arcane game page and author credits](https://www.newgrounds.com/portal/view/442706)
+[Original game page and credits](https://www.newgrounds.com/portal/view/442706).
 
-Save the linked `.swf` file to your device's **Downloads** folder and select it from the app's first-run file picker. If the browser opens the file instead of saving it, use **Save link as...**. No renaming is required; the import supports the original `442706_Arcane.swf` filename. Game content remains owned by its respective rights holders.
+**Important:** The original Flash game is **not included** with the Android APK or source repository.
 
-No all-files storage permission is requested. The original Flash game runs offline; the updater uses internet access only for optional HTTPS update metadata and a browser-based release link.
+## Known issue
 
-## Known issues
+Occasional distorted or uneven left/right game audio was observed during testing on an Odin 2 Portal. A stereo speaker test is included in **FrostFrontend → Graphics**.
 
-Intermittent distorted/one-sided game sound was previously observed on one Odin 2 Portal. The cause has not yet been isolated; it could involve the Ruffle-to-WebView-to-Android audio path. A native stereo speaker diagnostic is included.
+## Notes
 
-## Existing private Debug users
+Android 8.0 or newer is required. Compatibility on devices other than the Odin 2 Portal may vary. Do not uninstall the app or clear its storage if you wish to keep existing saves. Private Debug installations use a different signing key and cannot be upgraded directly to this public release.
 
-Release signing differs from Android Debug signing. **Do not uninstall your existing Debug app to install this release without making a plan for your saved progress.** The separate `.importtest` build can test the file-import process without touching your existing app or saves.
-
-## Distribution and attribution
-
-The original SWF, game artwork and other game-owned assets are **not** part of this download. Supply your own lawfully obtained game file.
-
-Ruffle: https://ruffle.rs - used under its published MIT/Apache-2.0 licensing terms. Preserve the upstream license files and notices when redistributing its runtime.
-
-**Important:** v0.2.0 is the initial signed release. Its update metadata is staged from the signed APK and published only after the matching public GitHub Release exists. Users can update future versions over the signed release without removing game files or saves, provided every release retains the same Android package and signing certificate.
-
-This project is unofficial and provided without any affiliation or endorsement by the original game's rights holders.
+This is an **unofficial project** and is not affiliated with the original game's developers or [Ruffle](https://ruffle.rs). Original game assets are owned by their respective rights holders.
