@@ -10,8 +10,8 @@ $ruffle = Join-Path $PSScriptRoot 'app\src\main\assets\www\ruffle\ruffle.js'
 $privateFolder = Join-Path $PSScriptRoot '.private-game'
 $held = Join-Path $privateFolder 'arcane.swf'
 $resFolder = Join-Path $PSScriptRoot 'app\src\main\res'
-$heldRes = Join-Path $privateFolder 'local-res'
-$originalIcon = Join-Path $resFolder 'drawable\ic_arcane_launcher.xml'
+$manifest = Join-Path $PSScriptRoot 'app\src\main\AndroidManifest.xml'
+$manifestBackup = Join-Path $HOME 'Downloads\Arcane-Manifest-Backup.xml'
 $unsigned = Join-Path $PSScriptRoot 'app\build\outputs\apk\release\app-release-unsigned.apk'
 $releaseDir = Join-Path $PSScriptRoot 'release'
 $aligned = Join-Path $releaseDir 'Arcane-v0.2.0-aligned.apk'
@@ -28,8 +28,28 @@ if (-not (Test-Path $ruffle)) { throw 'Ruffle runtime missing. Run prepare.ps1 f
 if (-not $tools) { throw 'Android zipalign/apksigner not found in SDK build-tools.' }
 if (-not (Test-Path $keytool)) { throw 'JDK keytool missing.' }
 if (Test-Path $held) { throw "Previous private backup exists: $held. Restore it before continuing." }
-if (Test-Path $heldRes) { throw "Previous private resources backup exists: $heldRes. Restore it before continuing." }
-if (-not (Test-Path $originalIcon)) { throw 'Original game-free launcher icon missing.' }
+if (-not (Test-Path $manifestBackup)) {
+    throw "Custom icon manifest backup missing: $manifestBackup. The public build is stopped to avoid replacing your launcher icon."
+}
+# The original locally designed icon reference was preserved in this backup
+# before Git pulled the source-only fallback icon.
+$previousManifest = [System.IO.File]::ReadAllText($manifestBackup)
+$iconMatch = [regex]::Match($previousManifest, 'android:icon\s*=\s*"(@(mipmap|drawable)/([A-Za-z0-9_]+))"')
+if (-not $iconMatch.Success) {
+    throw "No Android launcher icon found in backup: $manifestBackup"
+}
+$iconRef = $iconMatch.Groups[1].Value
+$iconType = $iconMatch.Groups[2].Value
+$iconName = $iconMatch.Groups[3].Value
+$iconFiles = @(Get-ChildItem -Path $resFolder -Recurse -File |
+    Where-Object {
+        $_.Directory.Name -match "^$iconType($|-)" -and
+        $_.BaseName -eq $iconName
+    })
+if ($iconFiles.Count -eq 0) {
+    throw "Your custom $iconRef icon resources are missing from $resFolder. The source-only shield icon will not be substituted."
+}
+Write-Host "Using your custom launcher icon: $iconRef"
 
 $zipalign = Join-Path $tools.FullName 'zipalign.exe'
 $apksigner = Join-Path $tools.FullName 'apksigner.bat'
@@ -52,7 +72,7 @@ function Confirm-GameFree($file) {
 }
 
 $moved = $false
-$movedRes = $false
+$manifestReplaced = $false
 try {
     if (Test-Path $game) {
         New-Item -ItemType Directory -Path $privateFolder -Force | Out-Null
@@ -60,21 +80,26 @@ try {
         $moved = $true
     }
 
-    # Isolate personal local launcher art and package only the new source icon.
-    New-Item -ItemType Directory -Path $privateFolder -Force | Out-Null
-    Move-Item -LiteralPath $resFolder -Destination $heldRes
-    $movedRes = $true
-    New-Item -ItemType Directory -Path (Join-Path $resFolder 'drawable') -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $heldRes 'drawable\ic_arcane_launcher.xml') -Destination (Join-Path $resFolder 'drawable\ic_arcane_launcher.xml')
+    # Use the user's own icon locally without committing any artwork.
+    # The original repository manifest is restored byte-for-byte even if build fails.
+    $manifestBytes = [System.IO.File]::ReadAllBytes($manifest)
+    $currentManifest = [System.Text.Encoding]::UTF8.GetString($manifestBytes)
+    if ($currentManifest -notmatch 'android:icon="[^"]+"') {
+        throw 'Expected launcher icon attribute not found in AndroidManifest.xml'
+    }
+    $withCustomIcon = [regex]::Replace($currentManifest,
+        'android:icon="[^"]+"', ('android:icon="' + $iconRef + '"'))
+    [System.IO.File]::WriteAllText($manifest, $withCustomIcon, (New-Object System.Text.UTF8Encoding($false)))
+    $manifestReplaced = $true
+
     & $gradle clean assembleRelease
     if ($LASTEXITCODE -ne 0) { throw 'Release compilation failed.' }
     if (-not (Test-Path $unsigned)) { throw 'Unsigned release APK not found.' }
     Confirm-GameFree $unsigned
 } finally {
-    if ($movedRes) {
-        if (Test-Path $resFolder) { Remove-Item -LiteralPath $resFolder -Recurse -Force }
-        Move-Item -LiteralPath $heldRes -Destination $resFolder
-        Write-Host 'PASS: original local resources restored.'
+    if ($manifestReplaced) {
+        [System.IO.File]::WriteAllBytes($manifest, $manifestBytes)
+        Write-Host 'PASS: source manifest restored; your custom icon resources were not moved.'
     }
     if ($moved) {
         Move-Item -LiteralPath $held -Destination $game
