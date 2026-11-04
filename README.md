@@ -42,7 +42,7 @@ Automatic checks run when the signed release launches, if enabled. Verified resu
 - [x] Confirm Arcane8 saves survive restarts and FrostFrontend header sizing is readable.
 - [x] Implement first-run document picker, private SWF storage and game-free package verification.
 - [ ] Device-test the isolated SWF import flow, cancellation/retry, gameplay and progress persistence.
-- [ ] Device-test the fourth Updates tab, automatic-check toggle, offline status and L1/R1 navigation.
+- [ ] Verify fourth-tab navigation and automatic-toggle persistence in the isolated test; verify real online/offline checks in the signed public release.
 - [ ] Produce and verify the signed, game-free v0.2.0 APK with the permanent release keystore.
 - [ ] Publish source and APK with appropriate Ruffle notices; keep original SWF/art assets out of public downloads.
 
