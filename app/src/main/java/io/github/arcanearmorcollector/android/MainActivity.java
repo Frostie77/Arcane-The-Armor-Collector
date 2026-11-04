@@ -49,6 +49,9 @@ public class MainActivity extends Activity {
     private int warningSelection;
     private boolean warningExitMenu;
     private int menuSelection, menuAxisLatch, bindingAction = -1;
+    // FrostFrontend's top navigation: Graphics, Controls, Touch Settings.
+    private int optionsTab;
+    private int pendingOptionsTab = -1;
     private String displayMode = "original";
     private boolean invertAimY;
     private int aimSpeedIndex = 1;
@@ -359,6 +362,8 @@ public class MainActivity extends Activity {
         showingControls = false;
         showingTouchControls = false;
         showingMovementControls = false;
+        optionsTab = 0;
+        pendingOptionsTab = -1;
         refreshTouchControls();
         menuSelection = 0;
         menuAxisLatch = 0;
@@ -381,6 +386,7 @@ public class MainActivity extends Activity {
         unmappedWarningLayer = null;
         warningKeepEditing = warningContinue = null;
         bindingAction = -1;
+        pendingOptionsTab = -1;
         menuAxisLatch = 0;
         gamepad.release();
         if (optionsOverlay != null) {
@@ -396,6 +402,36 @@ public class MainActivity extends Activity {
         gameView.requestFocus();
     }
 
+    private void requestOptionsClose() {
+        if (unmappedWarningLayer != null) return;
+        if (showingControls) {
+            // Closing must respect the existing unmapped-controls warning.
+            if (bindingAction >= 0) bindingAction = -1;
+            pendingOptionsTab = -1;
+            leaveControls(true);
+        } else {
+            closeOptions();
+        }
+    }
+
+    private void selectOptionsTab(int tab) {
+        if (!optionsOpen || unmappedWarningLayer != null || tab < 0 || tab > 2) return;
+        if (showingControls) {
+            if (bindingAction >= 0) bindingAction = -1;
+            pendingOptionsTab = tab;
+            leaveControls(false);
+            return;
+        }
+        pendingOptionsTab = -1;
+        optionsTab = tab;
+        showingControls = false;
+        showingMovementControls = false;
+        showingTouchControls = tab == 2;
+        menuSelection = 0;
+        menuAxisLatch = 0;
+        renderOptions();
+    }
+
     private void backOptions() {
         if (unmappedWarningLayer != null) {
             dismissUnmappedWarning();
@@ -403,20 +439,19 @@ public class MainActivity extends Activity {
         }
         if (bindingAction >= 0) {
             bindingAction = -1;
+            renderOptions();
         } else if (showingControls) {
+            pendingOptionsTab = -1;
             leaveControls(false);
-            return;
-        } else if (showingTouchControls) {
-            showingTouchControls = false;
-            menuSelection = 3;
         } else if (showingMovementControls) {
             showingMovementControls = false;
-            menuSelection = 4;
+            menuSelection = 1;
+            renderOptions();
+        } else if (optionsTab != 0) {
+            selectOptionsTab(0);
         } else {
-            closeOptions();
-            return;
+            requestOptionsClose();
         }
-        renderOptions();
     }
 
     private void leaveControls(boolean exitMenu) {
@@ -433,10 +468,15 @@ public class MainActivity extends Activity {
 
     private void finishLeavingControls(boolean exitMenu) {
         if (exitMenu) {
+            pendingOptionsTab = -1;
             closeOptions();
         } else {
             showingControls = false;
-            menuSelection = 2;
+            showingMovementControls = false;
+            optionsTab = pendingOptionsTab >= 0 ? pendingOptionsTab : 1;
+            showingTouchControls = optionsTab == 2;
+            pendingOptionsTab = -1;
+            menuSelection = 0;
             renderOptions();
         }
     }
@@ -554,15 +594,16 @@ public class MainActivity extends Activity {
 
     private void navigateOptions(int direction) {
         if (bindingAction >= 0) return;
-        int count = showingControls ? 11 : (showingTouchControls ? 7 :
-            (showingMovementControls ? 6 : 5));
+        int count = showingControls ? 11 : showingMovementControls ? 6 :
+            showingTouchControls ? 6 : optionsTab == 1 ? 2 : 1;
         menuSelection = (menuSelection + direction + count) % count;
         updateOptionsSelection();
     }
 
     private void adjustOption(int direction) {
         if (bindingAction >= 0) return;
-        if (!showingControls && !showingTouchControls && menuSelection == 1) {
+        if (optionsTab == 0 && !showingControls && !showingMovementControls &&
+            !showingTouchControls && menuSelection == 0) {
             cycleDisplay(direction);
         } else if (showingMovementControls) {
             switch (menuSelection) {
@@ -576,11 +617,11 @@ public class MainActivity extends Activity {
             refreshSettingRows();
         } else if (showingTouchControls) {
             switch (menuSelection) {
-                case 1: touchMode = (touchMode + direction + 3) % 3; break;
-                case 2: touchSizeIndex = (touchSizeIndex + direction + 3) % 3; break;
-                case 3: touchOpacityIndex = (touchOpacityIndex + direction + 3) % 3; break;
-                case 4: touchSwapped = !touchSwapped; break;
-                case 5: touchInsetIndex = (touchInsetIndex + direction + 3) % 3; break;
+                case 0: touchMode = (touchMode + direction + 3) % 3; break;
+                case 1: touchSizeIndex = (touchSizeIndex + direction + 3) % 3; break;
+                case 2: touchOpacityIndex = (touchOpacityIndex + direction + 3) % 3; break;
+                case 3: touchSwapped = !touchSwapped; break;
+                case 4: touchInsetIndex = (touchInsetIndex + direction + 3) % 3; break;
                 default: return;
             }
             saveTouchPreferences();
@@ -598,33 +639,29 @@ public class MainActivity extends Activity {
 
     private void activateOption() {
         if (bindingAction >= 0) return;
-        if (!showingControls && !showingTouchControls && !showingMovementControls) {
-            if (menuSelection == 0) closeOptions();
-            else if (menuSelection == 1) cycleDisplay(1);
-            else {
-                showingControls = menuSelection == 2;
-                showingTouchControls = menuSelection == 3;
-                showingMovementControls = menuSelection == 4;
-                menuSelection = 0;
-                renderOptions();
-            }
-        } else if (showingTouchControls) {
-            if (menuSelection == 0) backOptions();
-            else if (menuSelection == 6) resetTouchPreferences();
+        if (showingTouchControls) {
+            if (menuSelection == 5) resetTouchPreferences();
             else adjustOption(1);
         } else if (showingMovementControls) {
             if (menuSelection == 0) backOptions();
             else if (menuSelection == 5) resetMovementPreferences();
             else adjustOption(1);
-        } else if (menuSelection == 0) {
-            backOptions();
-        } else if (menuSelection <= 7) {
-            bindingAction = menuSelection - 1;
+        } else if (showingControls) {
+            if (menuSelection == 0) backOptions();
+            else if (menuSelection <= 7) {
+                bindingAction = menuSelection - 1;
+                renderOptions();
+            } else if (menuSelection == 8 || menuSelection == 9) {
+                adjustOption(1);
+            } else if (menuSelection == 10) restoreControls();
+        } else if (optionsTab == 0) {
+            if (menuSelection == 0) cycleDisplay(1);
+        } else if (optionsTab == 1) {
+            showingControls = menuSelection == 0;
+            showingMovementControls = menuSelection == 1;
+            showingTouchControls = false;
+            menuSelection = 0;
             renderOptions();
-        } else if (menuSelection == 8 || menuSelection == 9) {
-            adjustOption(1);
-        } else if (menuSelection == 10) {
-            restoreControls();
         }
     }
 
