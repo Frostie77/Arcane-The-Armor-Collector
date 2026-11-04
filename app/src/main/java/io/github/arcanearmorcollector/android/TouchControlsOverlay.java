@@ -9,9 +9,10 @@ import android.view.View;
 import android.widget.FrameLayout;
 
 /**
- * FrostFrontend touchscreen controls. Independent multi-touch views let the
- * game's normal touch UI receive taps anywhere outside the control regions.
- * The virtual input feeds the same key/pointer bridge as the physical pad.
+ * FrostFrontend touchscreen controls. A single movement joystick and five
+ * secondary action buttons leave the game's screen available for direct
+ * tap-to-aim-and-attack and drag-to-aim-while-attacking input.
+ * Touches outside these views fall through to the WebView's normal Ruffle input.
  */
 final class TouchControlsOverlay extends FrameLayout {
     private final GamepadBridge bridge;
@@ -22,7 +23,7 @@ final class TouchControlsOverlay extends FrameLayout {
     private boolean swapped;
     private int insetDp = 18;
 
-    private AxisPad movePad, aimPad;
+    private AxisPad movePad;
     private ActionButton[] buttons;
 
     TouchControlsOverlay(Context context, GamepadBridge bridge) {
@@ -65,7 +66,6 @@ final class TouchControlsOverlay extends FrameLayout {
 
     void releaseAll() {
         if (movePad != null) movePad.reset();
-        if (aimPad != null) aimPad.reset();
         if (buttons != null) {
             for (ActionButton button : buttons) if (button != null) button.reset();
         }
@@ -95,44 +95,37 @@ final class TouchControlsOverlay extends FrameLayout {
     private void rebuild() {
         removeAllViews();
         int moveSide = swapped ? 1 : 0;
-        int aimSide = swapped ? 0 : 1;
-        movePad = new AxisPad(getContext(), false);
-        aimPad = new AxisPad(getContext(), true);
+        int actionSide = swapped ? 0 : 1;
+        movePad = new AxisPad(getContext());
         int diameter = sz(134);
         position(movePad, diameter, diameter, moveSide, dp(16));
-        position(aimPad, diameter, diameter, aimSide, dp(16));
 
-        String[] names = {"FIRE", "ALT", "WEAPON", "ARMOUR", "THROW", "PREV", "NEXT"};
+        // No right joystick or separate attack buttons: tapping/dragging
+        // the game screen aims and attacks using Ruffle's own touch input.
+        String[] names = {"WEAPON", "ARMOUR", "THROW", "PREV", "NEXT"};
         buttons = new ActionButton[names.length];
         for (int i = 0; i < names.length; i++) {
-            buttons[i] = new ActionButton(getContext(), i, names[i]);
-            // Primary/alternate attack buttons sit next to the aim stick;
-            // the remaining commands form a row just above it.
-            if (i == 0) positionButton(buttons[i], aimSide, 143, 26, 56);
-            else if (i == 1) positionButton(buttons[i], aimSide, 143, 89, 52);
-            else positionButton(buttons[i], aimSide, (i - 2) * 53, 164, 46);
+            buttons[i] = new ActionButton(getContext(), i + 2, names[i]);
+            positionButton(buttons[i], actionSide, i * 50, 16, 44);
         }
     }
 
     private final class AxisPad extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final boolean aim;
         private int pointerId = -1;
         private float dx, dy;
 
-        AxisPad(Context context, boolean isAim) {
+        AxisPad(Context context) {
             super(context);
-            aim = isAim;
             setClickable(true);
-            setContentDescription(isAim ? "Touch aiming joystick" : "Touch movement joystick");
+            setContentDescription("Touch movement joystick");
         }
 
         void reset() {
             if (pointerId < 0 && dx == 0f && dy == 0f) return;
             pointerId = -1;
             dx = dy = 0;
-            if (aim) bridge.setTouchAim(0, 0, false);
-            else bridge.setTouchMovement(0, 0);
+            bridge.setTouchMovement(0, 0);
             invalidate();
         }
 
@@ -143,8 +136,7 @@ final class TouchControlsOverlay extends FrameLayout {
             dy = Math.max(-1f, Math.min(1f, (event.getY(index) - cy) / radius));
             float length = (float) Math.hypot(dx, dy);
             if (length > 1f) { dx /= length; dy /= length; }
-            if (aim) bridge.setTouchAim(dx, dy, true);
-            else bridge.setTouchMovement(dx, dy);
+            bridge.setTouchMovement(dx, dy);
             invalidate();
         }
 
@@ -152,7 +144,6 @@ final class TouchControlsOverlay extends FrameLayout {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     pointerId = event.getPointerId(0);
-                    if (aim) bridge.showTouchCursor();
                     update(event, 0);
                     return true;
                 case MotionEvent.ACTION_MOVE:
@@ -189,7 +180,7 @@ final class TouchControlsOverlay extends FrameLayout {
             paint.setColor(gold);
             paint.setTextSize(dp(11));
             paint.setTextAlign(Paint.Align.CENTER);
-            c.drawText(aim ? "AIM" : "MOVE", cx, cy + r * 0.73f, paint);
+            c.drawText("MOVE", cx, cy + r * 0.73f, paint);
         }
     }
 
