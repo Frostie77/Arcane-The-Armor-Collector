@@ -257,7 +257,7 @@ public class MainActivity extends Activity {
         getPreferences(MODE_PRIVATE).edit().putString("display_mode", displayMode).apply();
         gamepad.setDisplayMode(displayMode);
         applyDisplayModeToPage();
-        renderOptions();
+        refreshSettingRows();
     }
 
     private boolean hasGamepad() {
@@ -316,7 +316,7 @@ public class MainActivity extends Activity {
         touchSizeIndex = touchOpacityIndex = touchInsetIndex = 1;
         touchSwapped = false;
         saveTouchPreferences();
-        renderOptions();
+        refreshSettingRows();
     }
 
     private void setAimPreferences() {
@@ -629,6 +629,48 @@ public class MainActivity extends Activity {
     }
 
 
+    private void updateSettingRow(int index, String name, String detail) {
+        if (optionRows == null || index < 0 || index >= optionRows.getChildCount()) return;
+        View child = optionRows.getChildAt(index);
+        if (!(child instanceof TextView)) return;
+        String label = name + (detail.isEmpty() ? "" : "\n    " + detail);
+        TextView row = (TextView) child;
+        row.setTag(label);
+        row.setText((index == menuSelection ? "›  " : "   ") + label);
+    }
+
+    private void refreshSettingRows() {
+        if (!optionsOpen || optionRows == null) return;
+        if (showingMovementControls) {
+            updateSettingRow(1, "Stick Directions: " + MOVEMENT_MODES[movementMode],
+                "WASD · D-pad unchanged");
+            updateSettingRow(2, "Stick Deadzone: " + DEADZONE_NAMES[movementDeadzoneIndex],
+                "Physical + touch sticks");
+            updateSettingRow(3, "Invert Movement X: " + (invertMoveX ? "On" : "Off"), "");
+            updateSettingRow(4, "Invert Movement Y: " + (invertMoveY ? "On" : "Off"), "");
+        } else if (showingTouchControls) {
+            updateSettingRow(1, "Touch Controls: " + TOUCH_MODES[touchMode],
+                touchMode == 0 ? "Auto-hide with controller" :
+                touchMode == 1 ? "Always show" : "Hidden");
+            updateSettingRow(2, "Control Size: " + TOUCH_SIZES[touchSizeIndex], "");
+            updateSettingRow(3, "Opacity: " + TOUCH_OPACITIES[touchOpacityIndex], "");
+            updateSettingRow(4, "Sides: " + (touchSwapped ? "Swapped" : "Standard"), "");
+            updateSettingRow(5, "Position: " + TOUCH_INSETS[touchInsetIndex],
+                "Distance from edge");
+        } else if (showingControls) {
+            updateSettingRow(8, "Invert Right-Stick Y: " +
+                (invertAimY ? "On" : "Off"), "Flip vertical aim");
+            updateSettingRow(9, "Aim Sensitivity: " + AIM_SPEEDS[aimSpeedIndex] + "×",
+                "Right-stick speed");
+        } else {
+            int mode = Math.max(0, displayModeIndex());
+            updateSettingRow(1, "Display Mode: " + DISPLAY_NAMES[mode],
+                mode == 0 ? "Unstretched · side bars" : "Full widescreen · stretched");
+        }
+        // Never recreate the panel or animate ScrollView when a value changes.
+        updateOptionsSelection();
+    }
+
     private void updateOptionsSelection() {
         if (optionRows == null || optionsScroll == null) return;
         for (int i = 0; i < optionRows.getChildCount(); i++) {
@@ -724,7 +766,9 @@ public class MainActivity extends Activity {
         // Retain the current scroll offset when a setting changes. A tab
         // switch starts at the top instead of jumping to the old tab's offset.
         int restoreY = optionsScroll != null && renderedControls == showingControls &&
-            renderedTouchControls == showingTouchControls ? optionsScroll.getScrollY() : 0;
+            renderedTouchControls == showingTouchControls &&
+            renderedMovementControls == showingMovementControls ?
+            optionsScroll.getScrollY() : 0;
         optionsOverlay.removeAllViews();
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -737,7 +781,8 @@ public class MainActivity extends Activity {
             Math.min(dp(525), screenH - dp(38)), Gravity.CENTER);
         optionsOverlay.addView(panel, panelParams);
         TextView heading = makeText(showingControls ? "CONTROLS" :
-            showingTouchControls ? "TOUCH CONTROLS" : "ARCANE  •  OPTIONS",
+            showingTouchControls ? "TOUCH CONTROLS" :
+            showingMovementControls ? "MOVEMENT" : "ARCANE  •  OPTIONS",
             21, 0xFFFFE0A1, 0x00000000);
         heading.setGravity(Gravity.CENTER);
         panel.addView(heading, new LinearLayout.LayoutParams(-1, dp(45)));
@@ -757,25 +802,38 @@ public class MainActivity extends Activity {
         optionRows = rows;
         renderedControls = showingControls;
         renderedTouchControls = showingTouchControls;
-        if (!showingControls && !showingTouchControls) {
+        renderedMovementControls = showingMovementControls;
+        if (!showingControls && !showingTouchControls && !showingMovementControls) {
             addOptionRow(rows, scroll, "Resume Game", "Return to game", 0);
             int mode = Math.max(0, displayModeIndex());
             addOptionRow(rows, scroll, "Display Mode: " + DISPLAY_NAMES[mode],
                 mode == 0 ? "Unstretched · side bars" :
                 "Full widescreen · stretched", 1);
             addOptionRow(rows, scroll, "Controller Settings", "Buttons and aiming", 2);
-            addOptionRow(rows, scroll, "Touchscreen Settings", "Touch sticks and buttons", 3);
+            addOptionRow(rows, scroll, "Touchscreen Settings", "Touch stick and actions", 3);
+            addOptionRow(rows, scroll, "Movement Settings", "Sticks → WASD · deadzone", 4);
+        } else if (showingMovementControls) {
+            addOptionRow(rows, scroll, "Back to Options", "", 0);
+            addOptionRow(rows, scroll, "Stick Directions: " + MOVEMENT_MODES[movementMode],
+                "WASD · D-pad unchanged", 1);
+            addOptionRow(rows, scroll, "Stick Deadzone: " + DEADZONE_NAMES[movementDeadzoneIndex],
+                "Physical + touch sticks", 2);
+            addOptionRow(rows, scroll, "Invert Movement X: " +
+                (invertMoveX ? "On" : "Off"), "", 3);
+            addOptionRow(rows, scroll, "Invert Movement Y: " +
+                (invertMoveY ? "On" : "Off"), "", 4);
+            addOptionRow(rows, scroll, "Reset Movement Settings", "Restore defaults", 5);
         } else if (showingTouchControls) {
             addOptionRow(rows, scroll, "Back to Options", "", 0);
             addOptionRow(rows, scroll, "Touch Controls: " + TOUCH_MODES[touchMode],
-                touchMode == 0 ? "Auto-hide with a controller" :
-                touchMode == 1 ? "Always show" : "Hide touch controls", 1);
+                touchMode == 0 ? "Auto-hide with controller" :
+                touchMode == 1 ? "Always show" : "Hidden", 1);
             addOptionRow(rows, scroll, "Control Size: " + TOUCH_SIZES[touchSizeIndex], "", 2);
             addOptionRow(rows, scroll, "Opacity: " + TOUCH_OPACITIES[touchOpacityIndex], "", 3);
             addOptionRow(rows, scroll, "Sides: " +
                 (touchSwapped ? "Swapped" : "Standard"), "", 4);
             addOptionRow(rows, scroll, "Position: " + TOUCH_INSETS[touchInsetIndex],
-                "Distance from screen edge", 5);
+                "Distance from edge", 5);
             addOptionRow(rows, scroll, "Reset Touch Controls", "Restore defaults", 6);
         } else {
             addOptionRow(rows, scroll, "Back to Options", "", 0);
