@@ -660,7 +660,7 @@ public class MainActivity extends Activity {
     private void navigateOptions(int direction) {
         if (bindingAction >= 0) return;
         int count = showingControls ? 11 : showingMovementControls ? 6 :
-            showingTouchControls ? 8 : optionsTab == 1 ? 2 : 1;
+            showingTouchControls ? 8 : optionsTab == 1 ? 2 : 2;
         menuSelection = (menuSelection + direction + count) % count;
         updateOptionsSelection();
     }
@@ -723,6 +723,7 @@ public class MainActivity extends Activity {
             } else if (menuSelection == 10) restoreControls();
         } else if (optionsTab == 0) {
             if (menuSelection == 0) cycleDisplay(1);
+            else if (menuSelection == 1) playSpeakerTest();
         } else if (optionsTab == 1) {
             showingControls = menuSelection == 0;
             showingMovementControls = menuSelection == 1;
@@ -736,11 +737,10 @@ public class MainActivity extends Activity {
     private void updateSettingRow(int index, String name, String detail) {
         if (optionRows == null || index < 0 || index >= optionRows.getChildCount()) return;
         View child = optionRows.getChildAt(index);
-        if (!(child instanceof TextView)) return;
-        String label = name + (detail.isEmpty() ? "" : "\n    " + detail);
-        TextView row = (TextView) child;
-        row.setTag(label);
-        row.setText((index == menuSelection ? "›  " : "   ") + label);
+        if (!(child instanceof OptionRow)) return;
+        OptionRow row = (OptionRow) child;
+        row.setContent(name, detail);
+        row.setHighlighted(index == menuSelection);
     }
 
     private void refreshSettingRows() {
@@ -783,15 +783,8 @@ public class MainActivity extends Activity {
         if (optionRows == null || optionsScroll == null) return;
         for (int i = 0; i < optionRows.getChildCount(); i++) {
             View child = optionRows.getChildAt(i);
-            if (!(child instanceof TextView)) continue;
-            TextView row = (TextView) child;
-            boolean selected = i == menuSelection;
-            String label = (String) row.getTag();
-            row.setText((selected ? "›  " : "   ") + label);
-            row.setTextColor(selected ? 0xFFFFE1A2 : 0xFFEAE7EA);
-            row.setBackground(roundedBackground(
-                selected ? 0xFF433147 : 0x88201A26,
-                selected ? 0xFFD0AA69 : 0x00000000, 8));
+            if (child instanceof OptionRow)
+                ((OptionRow) child).setHighlighted(i == menuSelection);
         }
         if (menuSelection < 0 || menuSelection >= optionRows.getChildCount()) return;
         View row = optionRows.getChildAt(menuSelection);
@@ -799,9 +792,7 @@ public class MainActivity extends Activity {
         int scrollTop = optionsScroll.getScrollY();
         int scrollHeight = optionsScroll.getHeight();
         if (scrollHeight <= 0) return;
-        // Keep the selected row visible, but never rebuild/animate the
-        // entire ScrollView on each D-pad or left-stick movement.
-        int padding = dp(6);
+        int padding = dp(4);
         if (top < scrollTop + padding)
             optionsScroll.scrollTo(0, Math.max(0, top - padding));
         else if (bottom > scrollTop + scrollHeight - padding)
@@ -839,6 +830,82 @@ public class MainActivity extends Activity {
         }
     }
 
+    // Small one-line settings rows with right-aligned values. Only the
+    // highlighted row shows its explanation, leaving more options visible.
+    // Keep the outer row as a single child in optionRows for controller
+    // selection indices, scrolling and in-place option refresh.
+    private final class OptionRow extends LinearLayout {
+        final TextView nameView;
+        final TextView valueView;
+        final TextView detailView;
+        private String details = "";
+
+        OptionRow(boolean unmapped) {
+            super(MainActivity.this);
+            setOrientation(LinearLayout.VERTICAL);
+            setPadding(dp(10), dp(5), dp(10), dp(5));
+            setMinimumHeight(dp(36));
+            setClickable(true);
+            setFocusable(false);
+
+            LinearLayout top = new LinearLayout(MainActivity.this);
+            top.setOrientation(LinearLayout.HORIZONTAL);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            addView(top, new LinearLayout.LayoutParams(-1, -2));
+
+            nameView = new TextView(MainActivity.this);
+            nameView.setTextSize(14);
+            nameView.setTextColor(0xFFECE7EF);
+            nameView.setGravity(Gravity.CENTER_VERTICAL);
+            nameView.setSingleLine(true);
+            nameView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            top.addView(nameView, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            valueView = new TextView(MainActivity.this);
+            valueView.setTextSize(13);
+            valueView.setTextColor(0xFFE0CCAA);
+            valueView.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            valueView.setSingleLine(true);
+            valueView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(-2, -2);
+            vlp.leftMargin = dp(9);
+            top.addView(valueView, vlp);
+
+            if (unmapped) {
+                TextView warning = new WarningOptionRow();
+                top.addView(warning, new LinearLayout.LayoutParams(dp(30), dp(29)));
+            }
+
+            detailView = new TextView(MainActivity.this);
+            detailView.setTextSize(11);
+            detailView.setTextColor(0xFFBDB1C8);
+            detailView.setPadding(dp(2), dp(2), 0, 0);
+            detailView.setVisibility(View.GONE);
+            addView(detailView, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        void setContent(String text, String detail) {
+            int sep = text.indexOf(": ");
+            String title = sep < 0 ? text : text.substring(0, sep);
+            String value = sep < 0 ? "" : text.substring(sep + 2);
+            nameView.setText(title);
+            valueView.setText(value);
+            valueView.setVisibility(value.isEmpty() ? View.GONE : View.VISIBLE);
+            details = detail;
+            detailView.setText(detail);
+        }
+
+        void setHighlighted(boolean selected) {
+            nameView.setTextColor(selected ? 0xFFFFE1A2 : 0xFFECE7EF);
+            valueView.setTextColor(selected ? 0xFFFFE1A2 : 0xFFE0CCAA);
+            detailView.setVisibility(selected && !details.isEmpty()
+                ? View.VISIBLE : View.GONE);
+            setBackground(roundedBackground(
+                selected ? 0xFF433147 : 0x55201A26,
+                selected ? 0xFFD0AA69 : 0x00000000, 8));
+        }
+    }
+
     private void addOptionRow(LinearLayout rows, ScrollView scroll,
                               String name, String detail, int index) {
         addOptionRow(rows, scroll, name, detail, index, false);
@@ -846,20 +913,10 @@ public class MainActivity extends Activity {
 
     private void addOptionRow(LinearLayout rows, ScrollView scroll,
                               String name, String detail, int index, boolean unmapped) {
-        String label = name + (detail.isEmpty() ? "" : "\n    " + detail);
-        TextView row = unmapped ? new WarningOptionRow() : new TextView(this);
-        row.setText(label);
-        row.setTextSize(showingControls ? 14 : 15);
-        row.setTextColor(0xFFEAE7EA);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        // Compact single-line controller mappings allow more settings to be
-        // visible without resizing FrostFrame or reintroducing scrolling bounce.
-        int verticalPadding = showingControls ? dp(6) : dp(10);
-        row.setPadding(dp(14), verticalPadding,
-            unmapped ? dp(48) : dp(14), verticalPadding);
-        row.setTag(label);
+        OptionRow row = new OptionRow(unmapped);
+        row.setContent(name, detail);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = showingControls ? dp(3) : dp(5);
+        lp.bottomMargin = dp(3);
         rows.addView(row, lp);
         row.setOnClickListener(v -> {
             if (bindingAction >= 0) return;
@@ -867,6 +924,11 @@ public class MainActivity extends Activity {
             activateOption();
             if (optionsOpen) updateOptionsSelection();
         });
+    }
+
+    private void playSpeakerTest() {
+        if (gameView != null) gameView.evaluateJavascript(
+            "if(window.arcaneSpeakerTest)window.arcaneSpeakerTest();", null);
     }
 
     private void renderOptions() {
@@ -881,7 +943,7 @@ public class MainActivity extends Activity {
         optionsOverlay.removeAllViews();
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(20), dp(14), dp(20), dp(16));
+        panel.setPadding(dp(12), dp(8), dp(12), dp(10));
         panel.setBackground(roundedBackground(0xF5221A2B, 0xFFC09A62, 16));
 
         int screenW = getResources().getDisplayMetrics().widthPixels;
@@ -896,24 +958,24 @@ public class MainActivity extends Activity {
         // settings list much more vertical room on landscape handhelds.
         FrameLayout header = new FrameLayout(this);
         header.setContentDescription("FrostFrontend settings navigation");
-        panel.addView(header, new LinearLayout.LayoutParams(-1, dp(48)));
+        panel.addView(header, new LinearLayout.LayoutParams(-1, dp(38)));
 
         // Leave a permanent right-hand slot for the exit X.
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         FrameLayout.LayoutParams tabsParams = new FrameLayout.LayoutParams(
             -1, -1, Gravity.LEFT | Gravity.CENTER_VERTICAL);
-        tabsParams.rightMargin = dp(54);
+        tabsParams.rightMargin = dp(43);
         header.addView(tabs, tabsParams);
         String[] tabNames = {"Graphics", "Controls", "Touch Settings"};
         for (int i = 0; i < tabNames.length; i++) {
             final int tabIndex = i;
             boolean selected = optionsTab == i;
-            TextView tab = makeText(tabNames[i], 14,
+            TextView tab = makeText(tabNames[i], 13,
                 selected ? 0xFFFFDFA2 : 0xFFDDD6E0,
                 selected ? 0xFF433147 : 0xFF2B2432);
             tab.setGravity(Gravity.CENTER);
-            tab.setPadding(dp(4), dp(3), dp(4), dp(3));
+            tab.setPadding(dp(4), dp(1), dp(4), dp(1));
             tab.setBackground(roundedBackground(selected ? 0xFF433147 : 0xFF2B2432,
                 selected ? 0xFFD0AA69 : 0xFF564761, 9));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, 1f);
@@ -924,7 +986,7 @@ public class MainActivity extends Activity {
         CloseIconView close = new CloseIconView();
         close.setOnClickListener(v -> requestOptionsClose());
         FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
-            dp(39), dp(39), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            dp(33), dp(33), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(close, closeParams);
 
         ScrollView scroll = new ScrollView(this);
@@ -991,6 +1053,8 @@ public class MainActivity extends Activity {
             addOptionRow(rows, scroll, "Display Mode: " + DISPLAY_NAMES[mode],
                 mode == 0 ? "Unstretched · side bars" :
                 "Full widescreen · stretched", 0);
+            addOptionRow(rows, scroll, "Speaker Test: Left → Right → Both",
+                "Listen to each speaker in order; game audio stays paused", 1);
         }
 
         if (bindingAction >= 0) {
