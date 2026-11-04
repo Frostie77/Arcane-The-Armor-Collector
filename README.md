@@ -16,6 +16,17 @@ No internet connection or all-files storage permission is required to import or 
 
 **Existing private Debug installs:** Do not uninstall or clear app data to try a public release build; that would erase progress. A normally signed release APK cannot update a Debug-signed installation with the same package ID. Use the isolated import test below first; it has a separate application ID and leaves Debug data untouched.
 
+## Get the original Flash game
+
+The game itself is **not included** in the APK or source repository. Players can obtain the original file from the developer's original Newgrounds publication:
+
+- [Original Arcane game page on Newgrounds](https://www.newgrounds.com/portal/view/442706) - uploaded by the game's creator.
+- [Download Arcane.swf from Newgrounds' original game-file host](https://uploads.ungrounded.net/442000/442706_Arcane.swf) - if the browser opens the Flash file instead of downloading it, use **Save link as...** or **Save page as...**, depending on the browser.
+
+Copy the downloaded `.swf` file to your Android device (for example, **Downloads**). Launch Arcane and choose **Select Game File** to import it. The file can be named `442706_Arcane.swf`; no renaming is required. The app keeps an internal copy for future launches.
+
+These links point to Newgrounds' externally hosted original game file, **not** a redistribution by this project. Game rights remain with their respective owners; only obtain and use the game where permitted. Third-party archival copies and unofficial reuploads are not required.
+
 ## Build on Windows
 
 1. Clone the source and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\prepare.ps1` to prepare Ruffle/Gradle. The original SWF is **not required** to build a public wrapper.
