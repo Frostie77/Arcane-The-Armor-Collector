@@ -14,7 +14,13 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.os.Bundle;
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioTrack;
+import android.content.Context;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -37,6 +43,7 @@ public class MainActivity extends Activity {
     private WebView gameView;
     private GamepadBridge gamepad;
     private boolean backgrounded;
+    private volatile Thread speakerTestThread;
     private FrameLayout root;
     private FrameLayout optionsOverlay;
     private TouchControlsOverlay touchControls;
@@ -927,8 +934,116 @@ public class MainActivity extends Activity {
     }
 
     private void playSpeakerTest() {
-        if (gameView != null) gameView.evaluateJavascript(
-            "if(window.arcaneSpeakerTest)window.arcaneSpeakerTest();", null);
+        // The WebAudio test was silent on the Odin when the SWF/WebView was
+        // suspended by FrostFrontend. Bypass that route entirely: use the
+        // Android media output directly to isolate device channel routing.
+        if (speakerTestThread != null && speakerTestThread.isAlive()) {
+            Toast.makeText(this, "Speaker test is playing", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this,
+            "Speaker test: LEFT, then RIGHT, then BOTH. Check media volume.",
+            Toast.LENGTH_LONG).show();
+        Thread worker = new Thread(this::runSpeakerTest, "ArcaneSpeakerTest");
+        speakerTestThread = worker;
+        worker.start();
+    }
+
+    private void runSpeakerTest() {
+        AudioTrack track = null;
+        final String tag = "ArcaneAudioTest";
+        final int sampleRate = 48000;
+        try {
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (am != null) {
+                Log.d(tag, "mediaVolume=" + am.getStreamVolume(AudioManager.STREAM_MUSIC) +
+                    "/" + am.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+            }
+            int minBuffer = AudioTrack.getMinBufferSize(sampleRate,
+                AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT);
+            if (minBuffer <= 0) {
+                Log.e(tag, "No supported stereo AudioTrack buffer: " + minBuffer);
+                return;
+            }
+            AudioFormat format = new AudioFormat.Builder()
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setSampleRate(sampleRate)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                .build();
+            AudioAttributes attributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+            track = new AudioTrack.Builder()
+                .setAudioAttributes(attributes)
+                .setAudioFormat(format)
+                .setBufferSizeInBytes(Math.max(minBuffer, sampleRate * 4 / 5))
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build();
+            if (track.getState() != AudioTrack.STATE_INITIALIZED) {
+                Log.e(tag, "Native stereo AudioTrack could not initialize");
+                return;
+            }
+            Log.d(tag, "start: sampleRate=" + track.getSampleRate() +
+                " channels=" + track.getChannelCount() +
+                " mode=PCM16/stereo media");
+            track.play();
+            int samplesPerStep = (int) (sampleRate * 0.75f);
+            int fade = (int) (sampleRate * 0.02f);
+            for (int channel = 0; channel < 3; channel++) {
+                if (Thread.currentThread().isInterrupted()) break;
+                String label = new String[] {"LEFT", "RIGHT", "BOTH"}[channel];
+                Log.d(tag, "step=" + label);
+                short[] sound = new short[samplesPerStep * 2];
+                for (int frame = 0; frame < samplesPerStep; frame++) {
+                    double envelope = Math.min(1.0,
+                        Math.min(frame / (double) fade,
+                            (samplesPerStep - 1 - frame) / (double) fade));
+                    short sample = (short) (Math.sin(
+                        2.0 * Math.PI * 440.0 * frame / sampleRate) *
+                        Math.max(0, envelope) * Short.MAX_VALUE * 0.18);
+                    sound[frame * 2] = channel == 1 ? 0 : sample;
+                    sound[frame * 2 + 1] = channel == 0 ? 0 : sample;
+                }
+                if (!writeStereoAudio(track, sound)) break;
+                if (channel != 2) {
+                    short[] silence = new short[(int) (sampleRate * 0.18f) * 2];
+                    if (!writeStereoAudio(track, silence)) break;
+                }
+            }
+            // Give the hardware time to drain the queued stream.
+            while (!Thread.currentThread().isInterrupted() &&
+                   track.getPlaybackHeadPosition() < sampleRate * 2.5f) {
+                Thread.sleep(25);
+            }
+            Log.d(tag, "finished");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            Log.d(tag, "cancelled");
+        } catch (Exception e) {
+            Log.e(tag, "Native stereo test failed", e);
+        } finally {
+            if (track != null) {
+                try { track.pause(); } catch (Exception ignored) { }
+                try { track.flush(); } catch (Exception ignored) { }
+                track.release();
+            }
+            if (speakerTestThread == Thread.currentThread()) speakerTestThread = null;
+        }
+    }
+
+    private boolean writeStereoAudio(AudioTrack track, short[] sound) {
+        int pos = 0;
+        while (pos < sound.length && !Thread.currentThread().isInterrupted()) {
+            int written = track.write(sound, pos, sound.length - pos,
+                AudioTrack.WRITE_BLOCKING);
+            if (written <= 0) {
+                Log.e("ArcaneAudioTest", "AudioTrack write failed: " + written);
+                return false;
+            }
+            pos += written;
+        }
+        return pos == sound.length;
     }
 
     private void renderOptions() {
@@ -958,7 +1073,7 @@ public class MainActivity extends Activity {
         // settings list much more vertical room on landscape handhelds.
         FrameLayout header = new FrameLayout(this);
         header.setContentDescription("FrostFrontend settings navigation");
-        panel.addView(header, new LinearLayout.LayoutParams(-1, dp(38)));
+        panel.addView(header, new LinearLayout.LayoutParams(-1, dp(43)));
 
         // Leave a permanent right-hand slot for the exit X.
         LinearLayout tabs = new LinearLayout(this);
@@ -971,10 +1086,12 @@ public class MainActivity extends Activity {
         for (int i = 0; i < tabNames.length; i++) {
             final int tabIndex = i;
             boolean selected = optionsTab == i;
-            TextView tab = makeText(tabNames[i], 13,
+            TextView tab = makeText(tabNames[i], 18,
                 selected ? 0xFFFFDFA2 : 0xFFDDD6E0,
                 selected ? 0xFF433147 : 0xFF2B2432);
             tab.setGravity(Gravity.CENTER);
+            tab.setTypeface(android.graphics.Typeface.DEFAULT,
+                android.graphics.Typeface.BOLD);
             tab.setPadding(dp(4), dp(1), dp(4), dp(1));
             tab.setBackground(roundedBackground(selected ? 0xFF433147 : 0xFF2B2432,
                 selected ? 0xFFD0AA69 : 0xFF564761, 9));
@@ -1186,6 +1303,7 @@ public class MainActivity extends Activity {
     }
     @Override public void onPause() {
         backgrounded = true;
+        if (speakerTestThread != null) speakerTestThread.interrupt();
         if (touchControls != null) touchControls.releaseAll();
         if (gamepad != null) gamepad.release();
         refreshTouchControls();
@@ -1221,6 +1339,7 @@ public class MainActivity extends Activity {
     }
     @Override public void onDestroy() {
         backgrounded = true;
+        if (speakerTestThread != null) speakerTestThread.interrupt();
         if (gamepad != null) gamepad.release();
         if (gameView != null) {
             gameView.stopLoading();
