@@ -18,7 +18,7 @@ You can also visit the [original game page on Newgrounds](https://www.newgrounds
 
 ## Introducing FrostFrontend
 
-**FrostFrontend** is our custom Android settings interface, built to make Arcane comfortable to play on handhelds and touchscreens.
+**FrostFrontend** is my custom Android settings interface, built to make Arcane comfortable to play on handhelds and touchscreens.
 
 Open it with the **Start** button on a controller or the **three-line menu icon** on-screen. The game pauses while the menu is open.
 
