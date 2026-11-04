@@ -22,7 +22,11 @@ window.RufflePlayer.config = {
   unmuteOverlay: 'visible',
   letterbox: 'on',
   contextMenu: 'off',
-  allowNetworking: 'none',
+  // 'none' disables Flash SharedObject local saves AND fscommand scene
+  // notifications. Android itself has no INTERNET permission and the
+  // WebView blocks every request outside its private appassets origin.
+  allowNetworking: 'all',
+  allowScriptAccess: true,
   publicPath: 'ruffle/'
 };
 // Display modes are CSS-only to keep the loaded Flash game running without
@@ -265,7 +269,11 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
     };
     document.getElementById('game').appendChild(player);
-    await player.ruffle().load({ url: 'arcane.swf' });
+    await player.ruffle().load({
+      url: 'arcane.swf',
+      allowScriptAccess: true,
+      allowNetworking: 'all'
+    });
     if (arcaneInBackground || document.hidden) window.arcaneSuspend();
     else arcaneSyncPausedState();
     status.remove();
