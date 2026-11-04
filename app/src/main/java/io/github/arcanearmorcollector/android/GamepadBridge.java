@@ -300,12 +300,25 @@ final class GamepadBridge {
         float gx = (x - (vw - stageW) * 0.5f) * 640f / stageW;
         float gy = (y - (vh - stageH) * 0.5f) * 480f / stageH;
         if (gx < 0 || gx > 640 || gy < 0 || gy > 480) return false;
-        boolean topHud = gy <= 102f; // stats/options and other upper HUD icons
-        boolean potionHud = gy >= 413f && gy <= 478f &&
-            (Math.abs(gx - 508f) <= 25f ||
-             Math.abs(gx - 552f) <= 25f ||
-             Math.abs(gx - 596f) <= 25f);
-        return topHud || potionHud;
+        // Exact HUD sprite origins from the user's original SWF:
+        // potions: (508,443),(552,443),(596,443)
+        // stats/options subclips: (205,206),(335,207). These subclips
+        // contain menus, so their exact clickable child bounds can vary.
+        // Retain an upper strip for the HUD's other in-arena icons.
+        boolean topHud = gy <= 102f;
+        boolean statOrOptions = gy >= 171f && gy <= 244f &&
+            ((gx >= 169f && gx <= 241f) ||
+             (gx >= 299f && gx <= 371f));
+        boolean potionHud = gy >= 405f && gy <= 478f &&
+            (Math.abs(gx - 508f) <= 29f ||
+             Math.abs(gx - 552f) <= 29f ||
+             Math.abs(gx - 596f) <= 29f);
+        boolean hit = topHud || statOrOptions || potionHud;
+        Log.d("ArcaneHUD", "arena touch=(" + x + "," + y +
+            ") stage=(" + gx + "," + gy + ") hit=" + hit +
+            " top=" + topHud + " statsOptions=" + statOrOptions +
+            " potions=" + potionHud);
+        return hit;
     }
 
     // HUD touches must be real DOWN/UP gestures. The old HUD handler
