@@ -12,9 +12,11 @@ import java.util.zip.InflaterInputStream;
  *
  * The user's original SWF remains unmodified and git-ignored. It is NOT
  * embedded in source control or distributed by this file. Root timeline
- * frame 20 is the arena; the other root frames are menus, preparation or
- * transitions. These are ActionGetURL "FSCommand:" events read by Ruffle's
- * onFSCommand callback. If patching fails, use the unmodified game.
+ * arena scene scripts are on root frames 3-5 and 11-18, not just frame 20.
+ * Frame markers use ActionGetURL FSCommands read by Ruffle. Also registers
+ * a periodic flush on the game's existing _root.savefile SharedObject, which
+ * otherwise may not persist its updated data in a WebView force-stop.
+ * If patching fails, use the unmodified game.
  */
 final class ArcaneSceneMarker {
     private static final byte[] COMMAND =
@@ -75,14 +77,19 @@ final class ArcaneSceneMarker {
                 // the game's first DoAction transfers control to a different
                 // frame, so a marker placed after it never executes.
                 if (tag == 12 && !markedFrame) {
-                    patched.write(marker(COMMAND, frame == 20 ? "arena" : "menu"));
+                    patched.write(marker(COMMAND, isArenaFrame(frame) ? "arena" : "menu"));
                     patched.write(marker(FRAME_COMMAND, Integer.toString(frame)));
                     markedFrame = true;
                     notified++;
                 }
                 if (tag == 1) { // ShowFrame
+                    // The frame-1 script has already initialized
+                    // _root.savefile = SharedObject.getLocal("Arcane8").
+                    // Schedule a flush without replacing or modifying the
+                    // game's original save data or calling it on each frame.
+                    if (frame == 1) patched.write(saveFlushTimer());
                     if (!markedFrame) {
-                        patched.write(marker(COMMAND, frame == 20 ? "arena" : "menu"));
+                        patched.write(marker(COMMAND, isArenaFrame(frame) ? "arena" : "menu"));
                         patched.write(marker(FRAME_COMMAND, Integer.toString(frame)));
                         notified++;
                     }
@@ -109,6 +116,66 @@ final class ArcaneSceneMarker {
         } catch (RuntimeException | IOException error) {
             return original; // never prevent the user's original game from loading
         }
+    }
+
+    private static boolean isArenaFrame(int frame) {
+        // Root scripts on these frames call the game's startall gameplay
+        // setup; frame 20 contains inter-level ad code, not arena combat.
+        return (frame >= 3 && frame <= 5) || (frame >= 11 && frame <= 18);
+    }
+
+    private static void pushString(ByteArrayOutputStream action, String value)
+            throws IOException {
+        byte[] bytes = value.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        int length = bytes.length + 2; // type 0 + bytes + null terminator
+        action.write(0x96);
+        action.write(length & 255);
+        action.write((length >>> 8) & 255);
+        action.write(0);
+        action.write(bytes);
+        action.write(0);
+    }
+
+    private static void pushInt(ByteArrayOutputStream action, int value)
+            throws IOException {
+        action.write(0x96);
+        action.write(5);
+        action.write(0);
+        action.write(7); // ActionPush integer
+        for (int i = 0; i < 4; i++) action.write((value >>> (8 * i)) & 255);
+    }
+
+    private static byte[] saveFlushTimer() throws IOException {
+        // ActionScript 2:
+        //   setInterval(_root.savefile, "flush", 5000);
+        // ActionCallFunction takes the arguments in reverse push order.
+        // It calls the game's existing SharedObject method rather than
+        // recreating the object or rewriting its data from JavaScript.
+        ByteArrayOutputStream action = new ByteArrayOutputStream();
+        pushInt(action, 5000);
+        pushString(action, "flush");
+        pushString(action, "_root");
+        action.write(0x1c); // GetVariable
+        pushString(action, "savefile");
+        action.write(0x4e); // GetMember
+        pushInt(action, 3);
+        pushString(action, "setInterval");
+        action.write(0x3d); // CallFunction
+        action.write(0x17); // Pop timer id
+        action.write(0);    // End
+        byte[] code = action.toByteArray();
+        ByteArrayOutputStream tag = new ByteArrayOutputStream();
+        // Long SWF tag encoding is required for DoAction bodies >= 63 bytes.
+        int shortLen = Math.min(code.length, 63);
+        int header = (12 << 6) | shortLen;
+        tag.write(header & 255);
+        tag.write(header >>> 8);
+        if (code.length >= 63) {
+            for (int i = 0; i < 4; i++)
+                tag.write((code.length >>> (8 * i)) & 255);
+        }
+        tag.write(code);
+        return tag.toByteArray();
     }
 
     private static byte[] marker(byte[] command, String phase) throws IOException {
