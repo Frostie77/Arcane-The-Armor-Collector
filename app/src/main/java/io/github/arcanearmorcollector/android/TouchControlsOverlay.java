@@ -9,10 +9,9 @@ import android.view.View;
 import android.widget.FrameLayout;
 
 /**
- * FrostFrontend touchscreen controls. A single movement joystick and five
- * secondary action buttons leave the game's screen available for direct
- * tap-to-aim-and-attack and drag-to-aim-while-attacking input.
- * Touches outside these views fall through to the WebView's normal Ruffle input.
+ * FrostFrontend touchscreen controls. User-selectable joystick or digital
+ * D-pad movement plus relative trackpad aim/attack, or direct game-screen taps.
+ * Multi-touch splits input between movement and action surfaces.
  */
 final class TouchControlsOverlay extends FrameLayout {
     private final GamepadBridge bridge;
@@ -21,9 +20,12 @@ final class TouchControlsOverlay extends FrameLayout {
     private final int background = 0xC8272032;
     private float scale = 1f;
     private boolean swapped;
+    private boolean useDpad, relativeAim = true;
     private int insetDp = 18;
 
     private AxisPad movePad;
+    private DirectionPad directionPad;
+    private AimSurface aimSurface;
     private ActionButton[] buttons;
 
     TouchControlsOverlay(Context context, GamepadBridge bridge) {
@@ -33,6 +35,7 @@ final class TouchControlsOverlay extends FrameLayout {
         setClipToPadding(false);
         setFocusable(false);
         setClickable(false);
+        setMotionEventSplittingEnabled(true);
         rebuild();
     }
 
@@ -44,16 +47,20 @@ final class TouchControlsOverlay extends FrameLayout {
         return dp(size * scale);
     }
 
-    void configure(float size, float opacity, boolean swap, int inset) {
+    void configure(float size, float opacity, boolean swap, int inset,
+                   boolean dpad, boolean aimRelative) {
         size = Math.max(0.7f, Math.min(1.3f, size));
         opacity = Math.max(0.2f, Math.min(0.95f, opacity));
         inset = Math.max(6, Math.min(64, inset));
-        boolean changed = scale != size || swapped != swap || insetDp != inset;
+        boolean changed = scale != size || swapped != swap || insetDp != inset ||
+            useDpad != dpad || relativeAim != aimRelative;
         if (changed) {
             releaseAll();
             scale = size;
             swapped = swap;
             insetDp = inset;
+            useDpad = dpad;
+            relativeAim = aimRelative;
             rebuild();
         }
         setAlpha(opacity);
@@ -66,6 +73,8 @@ final class TouchControlsOverlay extends FrameLayout {
 
     void releaseAll() {
         if (movePad != null) movePad.reset();
+        if (directionPad != null) directionPad.reset();
+        if (aimSurface != null) aimSurface.reset();
         if (buttons != null) {
             for (ActionButton button : buttons) if (button != null) button.reset();
         }
@@ -96,17 +105,190 @@ final class TouchControlsOverlay extends FrameLayout {
         removeAllViews();
         int moveSide = swapped ? 1 : 0;
         int actionSide = swapped ? 0 : 1;
-        movePad = new AxisPad(getContext());
         int diameter = sz(134);
-        position(movePad, diameter, diameter, moveSide, dp(16));
+        if (relativeAim) {
+            // The touch zone only covers the lower portion of the right side;
+            // the rest of the game retains normal direct taps (e.g., menus).
+            aimSurface = new AimSurface(getContext());
+            int width = Math.round(getResources().getDisplayMetrics().widthPixels * 0.46f);
+            int height = Math.round(getResources().getDisplayMetrics().heightPixels * 0.74f);
+            position(aimSurface, width, height, actionSide, dp(8));
+        } else {
+            aimSurface = null;
+        }
+        if (useDpad) {
+            movePad = null;
+            directionPad = new DirectionPad(getContext());
+            position(directionPad, diameter, diameter, moveSide, dp(16));
+        } else {
+            directionPad = null;
+            movePad = new AxisPad(getContext());
+            position(movePad, diameter, diameter, moveSide, dp(16));
+        }
 
-        // No right joystick or separate attack buttons: tapping/dragging
-        // the game screen aims and attacks using Ruffle's own touch input.
+        // Attack is performed within the aim touch zone, not via a separate
+        // button. Direct mode uses unmodified Ruffle on-screen tapping.
         String[] names = {"WEAPON", "ARMOUR", "THROW", "PREV", "NEXT"};
         buttons = new ActionButton[names.length];
         for (int i = 0; i < names.length; i++) {
             buttons[i] = new ActionButton(getContext(), i + 2, names[i]);
             positionButton(buttons[i], actionSide, i * 50, 16, 44);
+        }
+    }
+
+    private final class AimSurface extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int activePointer = -1;
+        private float lastX, lastY;
+
+        AimSurface(Context context) {
+            super(context);
+            setClickable(true);
+            setContentDescription("Swipe to aim; tap or hold to fire");
+        }
+
+        void reset() {
+            if (activePointer == -1) return;
+            activePointer = -1;
+            bridge.endTouchTrackpad();
+            invalidate();
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    activePointer = event.getPointerId(0);
+                    lastX = event.getX(0);
+                    lastY = event.getY(0);
+                    bridge.beginTouchTrackpad();
+                    invalidate();
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (activePointer >= 0) {
+                        int index = event.findPointerIndex(activePointer);
+                        if (index >= 0) {
+                            float x = event.getX(index), y = event.getY(index);
+                            bridge.moveTouchTrackpad(x - lastX, y - lastY);
+                            lastX = x;
+                            lastY = y;
+                        }
+                    }
+                    return true;
+                case MotionEvent.ACTION_POINTER_UP:
+                    if (activePointer == event.getPointerId(event.getActionIndex()))
+                        reset();
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    reset();
+                    return true;
+                default: return true;
+            }
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            // Only a discreet guide; keep the game visible underneath.
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1.4f));
+            paint.setColor(0x66D8B985);
+            float inset = dp(5);
+            canvas.drawRoundRect(inset, inset, getWidth()-inset,
+                getHeight()-inset, dp(16), dp(16), paint);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setColor(gold);
+            paint.setTextSize(dp(11));
+            canvas.drawText("SWIPE TO AIM · TOUCH TO FIRE",
+                getWidth()/2f, dp(24), paint);
+        }
+    }
+
+    private final class DirectionPad extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int activePointer = -1;
+        private boolean up, down, left, right;
+
+        DirectionPad(Context context) {
+            super(context);
+            setClickable(true);
+            setContentDescription("Digital movement D-pad");
+        }
+
+        void reset() {
+            if (activePointer < 0 && !up && !down && !left && !right) return;
+            activePointer = -1;
+            up = down = left = right = false;
+            bridge.setTouchDpad(false, false, false, false);
+            invalidate();
+        }
+
+        private void change(float x, float y) {
+            float dx = (x - getWidth()*0.5f) / Math.max(1f, getWidth()*0.5f);
+            float dy = (y - getHeight()*0.5f) / Math.max(1f, getHeight()*0.5f);
+            float dominant = Math.max(Math.abs(dx), Math.abs(dy));
+            boolean h = Math.abs(dx) >= Math.abs(dy);
+            boolean v = Math.abs(dy) >= Math.abs(dx);
+            if (dominant < 0.21f) {
+                h = v = false;
+            } else if (Math.min(Math.abs(dx), Math.abs(dy)) > dominant*0.55f) {
+                h = v = true;
+            }
+            left = h && dx < 0f;
+            right = h && dx > 0f;
+            up = v && dy < 0f;
+            down = v && dy > 0f;
+            bridge.setTouchDpad(up, down, left, right);
+            invalidate();
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    activePointer = event.getPointerId(0);
+                    change(event.getX(0), event.getY(0));
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (activePointer >= 0) {
+                        int index = event.findPointerIndex(activePointer);
+                        if (index >= 0) change(event.getX(index), event.getY(index));
+                    }
+                    return true;
+                case MotionEvent.ACTION_POINTER_UP:
+                    if (activePointer == event.getPointerId(event.getActionIndex()))
+                        reset();
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                case MotionEvent.ACTION_UP:
+                    reset();
+                    return true;
+                default: return true;
+            }
+        }
+
+        @Override protected void onDraw(Canvas c) {
+            float cx = getWidth()*0.5f, cy = getHeight()*0.5f;
+            float unit = Math.min(cx, cy)/1.75f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(background);
+            c.drawRoundRect(cx-unit, cy-unit*1.55f, cx+unit,
+                cy+unit*1.55f, dp(8), dp(8), paint);
+            c.drawRoundRect(cx-unit*1.55f, cy-unit, cx+unit*1.55f,
+                cy+unit, dp(8), dp(8), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(2));
+            paint.setColor(border);
+            c.drawLine(cx-unit, cy-unit*1.55f, cx+unit, cy-unit*1.55f, paint);
+            c.drawLine(cx-unit, cy+unit*1.55f, cx+unit, cy+unit*1.55f, paint);
+            c.drawLine(cx-unit*1.55f, cy-unit, cx-unit*1.55f, cy+unit, paint);
+            c.drawLine(cx+unit*1.55f, cy-unit, cx+unit*1.55f, cy+unit, paint);
+            paint.setColor(gold);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(dp(19));
+            c.drawText("↑", cx, cy-unit*0.78f, paint);
+            c.drawText("↓", cx, cy+unit*1.1f, paint);
+            c.drawText("←", cx-unit, cy+dp(7), paint);
+            c.drawText("→", cx+unit, cy+dp(7), paint);
         }
     }
 
