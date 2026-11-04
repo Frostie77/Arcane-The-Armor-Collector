@@ -48,11 +48,14 @@ final class ArcaneUpdates {
         final String latest;
         final String releaseUrl;
         final boolean available;
-        Result(String status, String latest, String releaseUrl, boolean available) {
+        final boolean verified;
+        Result(String status, String latest, String releaseUrl,
+               boolean available, boolean verified) {
             this.status = status;
             this.latest = latest;
             this.releaseUrl = releaseUrl;
             this.available = available;
+            this.verified = verified;
         }
     }
 
@@ -76,7 +79,7 @@ final class ArcaneUpdates {
     static Result check(Context context) {
         if (!isSignedRelease(context))
             return new Result("Stable updates require the signed release APK.",
-                "Release builds only", null, false);
+                "Release builds only", null, false, false);
         try {
             final PackageInfo installed = context.getPackageManager().getPackageInfo(
                 context.getPackageName(),
@@ -91,7 +94,7 @@ final class ArcaneUpdates {
             require(PACKAGE.equals(feed.getString("package")), "Wrong Android package");
             if (feed.isNull("latest"))
                 return new Result("No public Android release has been announced yet.",
-                    "Not published", null, false);
+                    "Not published", null, false, true);
 
             JSONObject latest = feed.getJSONObject("latest");
             long newCode = integer(latest, "version_code");
@@ -120,7 +123,7 @@ final class ArcaneUpdates {
                 installed.getLongVersionCode() : installed.versionCode;
             if (newCode <= installedCode)
                 return new Result("You have the latest published Android release.",
-                    "v" + version, RELEASE_BASE + tag, false);
+                    "v" + version, RELEASE_BASE + tag, false, true);
 
             // Never offer a version based only on a changed repository file.
             // It must match one published, non-prerelease GitHub APK asset.
@@ -148,10 +151,10 @@ final class ArcaneUpdates {
             }
             require(matches == 1, "Signed Android APK not found on release");
             return new Result("Update available: v" + version, "v" + version,
-                RELEASE_BASE + tag, true);
+                RELEASE_BASE + tag, true, true);
         } catch (Exception error) {
             return new Result("Could not verify updates. Check internet or try again later.",
-                "Unavailable", null, false);
+                "Unavailable", null, false, false);
         }
     }
 
