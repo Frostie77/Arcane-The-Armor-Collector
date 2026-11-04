@@ -238,11 +238,13 @@ public class MainActivity extends Activity {
         if (gameImported) {
             gameView.requestFocus();
             gameView.loadUrl(ORIGIN + "/assets/index.html");
-            startUpdateCheck(false);
         } else {
             floatingOptionsButton.setVisibility(View.GONE);
             showGameImportPrompt();
         }
+        // Like Tooie, check on initial app start even before file import.
+        // The notice itself waits until the game returns to its menu.
+        startUpdateCheck(false);
     }
 
     private boolean hasBundledGame() {
@@ -584,7 +586,7 @@ public class MainActivity extends Activity {
     }
 
     private void startUpdateCheck(boolean manual) {
-        if (!gameImported || updateChecking) return;
+        if (updateChecking) return;
         if (!manual && (!updatesAutomatic || updateCheckedThisLaunch)) return;
         if (!manual) updateCheckedThisLaunch = true;
         updateChecking = true;
@@ -631,6 +633,7 @@ public class MainActivity extends Activity {
         if (!updateAvailable || updateNoticeShown || !sceneKnown || sceneArena ||
             optionsOpen || backgrounded || importOverlay != null ||
             isFinishing() || isDestroyed() || !hasWindowFocus()) return;
+        if (!ArcaneUpdates.claimNotice()) return;
         updateNoticeShown = true;
         new android.app.AlertDialog.Builder(this)
             .setTitle("Update available")
