@@ -106,15 +106,13 @@ final class TouchControlsOverlay extends FrameLayout {
         int moveSide = swapped ? 1 : 0;
         int actionSide = swapped ? 0 : 1;
         int diameter = sz(134);
-        if (relativeAim) {
-            // Invisible full-screen touch target UNDER the movement and action
-            // controls. Relative aim must work consistently everywhere:
-            // no outside-the-box fallback to direct mouse aiming.
-            aimSurface = new AimSurface(getContext());
-            addView(aimSurface, new FrameLayout.LayoutParams(-1, -1));
-        } else {
-            aimSurface = null;
-        }
+        // Both aim modes use the same full-screen input layer behind
+        // movement/action views. Routing Direct-mode taps through this layer
+        // keeps the two fingers in ONE multi-touch ViewGroup: the movement
+        // pad can remain held while the other finger aims and attacks.
+        // Relative keeps a fixed crosshair origin; Direct uses screen coords.
+        aimSurface = new AimSurface(getContext());
+        addView(aimSurface, new FrameLayout.LayoutParams(-1, -1));
         if (useDpad) {
             movePad = null;
             directionPad = new DirectionPad(getContext());
@@ -142,13 +140,16 @@ final class TouchControlsOverlay extends FrameLayout {
         AimSurface(Context context) {
             super(context);
             setClickable(true);
-            setContentDescription("Swipe to aim; tap or hold to fire");
+            setContentDescription(relativeAim ?
+                "Swipe anywhere to aim; touch or hold to fire" :
+                "Tap or drag anywhere to aim and fire while moving");
         }
 
         void reset() {
             if (activePointer == -1) return;
             activePointer = -1;
-            bridge.endTouchTrackpad();
+            if (relativeAim) bridge.endTouchTrackpad();
+            else bridge.endTouchDirect();
             invalidate();
         }
 
@@ -158,7 +159,8 @@ final class TouchControlsOverlay extends FrameLayout {
                     activePointer = event.getPointerId(0);
                     lastX = event.getX(0);
                     lastY = event.getY(0);
-                    bridge.beginTouchTrackpad();
+                    if (relativeAim) bridge.beginTouchTrackpad();
+                    else bridge.beginTouchDirect(lastX, lastY);
                     invalidate();
                     return true;
                 case MotionEvent.ACTION_MOVE:
@@ -166,7 +168,8 @@ final class TouchControlsOverlay extends FrameLayout {
                         int index = event.findPointerIndex(activePointer);
                         if (index >= 0) {
                             float x = event.getX(index), y = event.getY(index);
-                            bridge.moveTouchTrackpad(x - lastX, y - lastY);
+                            if (relativeAim) bridge.moveTouchTrackpad(x - lastX, y - lastY);
+                            else bridge.moveTouchDirect(x, y);
                             lastX = x;
                             lastY = y;
                         }
