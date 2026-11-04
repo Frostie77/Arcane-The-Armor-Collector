@@ -71,6 +71,17 @@ final class ArcaneUpdates {
         }
     }
 
+    static long installedCode(Context context) {
+        try {
+            PackageInfo installed = context.getPackageManager()
+                .getPackageInfo(context.getPackageName(), 0);
+            return Build.VERSION.SDK_INT >= 28 ? installed.getLongVersionCode() :
+                installed.versionCode;
+        } catch (Exception ignored) {
+            return -1;
+        }
+    }
+
     static boolean isSignedRelease(Context context) {
         return PACKAGE.equals(context.getPackageName()) &&
             (context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) == 0;
