@@ -2,7 +2,9 @@ $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 $www = Join-Path $PSScriptRoot 'app\src\main\assets\www'
 $swf = Join-Path $www 'arcane.swf'
-if (!(Test-Path $swf)) { throw "Missing arcane.swf. Copy your own legally obtained game SWF to: $swf" }
+if (!(Test-Path $swf)) {
+    Write-Host 'No game SWF in the project. The app will offer a private game-file import on first launch.'
+}
 
 # Download the official Ruffle NPM self-hosted release into the private local build.
 $version = '0.7.1'
