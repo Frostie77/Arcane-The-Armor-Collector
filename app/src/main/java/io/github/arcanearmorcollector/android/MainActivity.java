@@ -41,7 +41,7 @@ public class MainActivity extends Activity {
     private TouchControlsOverlay touchControls;
     private ScrollView optionsScroll;
     private LinearLayout optionRows;
-    private boolean renderedControls;
+    private boolean renderedControls, renderedTouchControls;
     private View floatingOptionsButton;
     private boolean optionsOpen, showingControls, showingTouchControls;
     private FrameLayout unmappedWarningLayer;
@@ -674,8 +674,8 @@ public class MainActivity extends Activity {
         if (!optionsOpen || optionsOverlay == null) return;
         // Retain the current scroll offset when a setting changes. A tab
         // switch starts at the top instead of jumping to the old tab's offset.
-        int restoreY = optionsScroll != null && renderedControls == showingControls
-            ? optionsScroll.getScrollY() : 0;
+        int restoreY = optionsScroll != null && renderedControls == showingControls &&
+            renderedTouchControls == showingTouchControls ? optionsScroll.getScrollY() : 0;
         optionsOverlay.removeAllViews();
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -707,6 +707,7 @@ public class MainActivity extends Activity {
         optionsScroll = scroll;
         optionRows = rows;
         renderedControls = showingControls;
+        renderedTouchControls = showingTouchControls;
         if (!showingControls && !showingTouchControls) {
             addOptionRow(rows, scroll, "Resume Game", "Return to game", 0);
             int mode = Math.max(0, displayModeIndex());
