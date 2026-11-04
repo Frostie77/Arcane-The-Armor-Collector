@@ -12,7 +12,7 @@ The public APK **does not contain Arcane's original Flash game or copyrighted ar
 2. Choose your own legally obtained Arcane: The Armor Collector `.swf` file from Android's document picker.
 3. Wait for the file to be copied into the app's private storage. The game then starts normally, and the copy remains available on future launches.
 
-No internet connection or all-files storage permission is required to import or play. Cancelling the picker leaves the import screen visible. An invalid or oversized file is rejected without replacing any previously imported game. The app keeps its WebView/Flash save data separately from the user-selected game file.
+No internet connection or all-files storage permission is required to import or play; internet is used only for optional public update checks. Cancelling the picker leaves the import screen visible. An invalid or oversized file is rejected without replacing any previously imported game. The app keeps its WebView/Flash save data separately from the user-selected game file.
 
 **Existing private Debug installs:** Do not uninstall or clear app data to try a public release build; that would erase progress. A normally signed release APK cannot update a Debug-signed installation with the same package ID. Use the isolated import test below first; it has a separate application ID and leaves Debug data untouched.
 
@@ -20,9 +20,21 @@ No internet connection or all-files storage permission is required to import or 
 
 1. Clone the source and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\prepare.ps1` to prepare Ruffle/Gradle. The original SWF is **not required** to build a public wrapper.
 2. To build and install a safe, separate game-free import test on a connected Odin, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\test-public-import.ps1`. If your private original game SWF exists at `app/src/main/assets/www/arcane.swf`, the script temporarily removes it from the APK build and optionally copies it to the Odin's Downloads folder for selection. Your main Debug installation and save data remain intact.
-3. Once first-run import, game controls and saves are verified on this isolated test, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-public-release.ps1` to produce a **signed and verified** game-free APK in the local `release` folder. It uses a locally created Android release keystore, prompts for the signing password and reports the SHA-256 hash. **Back up your release keystore securely**; losing it can prevent installing future updates over an existing release.
+3. Once first-run import, game controls, Updates navigation and saves are verified on this isolated test, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-public-release.ps1` to produce a **signed and verified** game-free APK in the local `release` folder. It uses a locally created Android release keystore, prompts for the signing password and reports the SHA-256 hash. **Back up your release keystore securely**; losing it can prevent installing future updates over an existing release.
 
 Both scripts refuse APKs that contain `arcane.swf` and restore any temporarily moved personal game file. Ruffle runtime assets are downloaded by `prepare.ps1`, not committed to this source repository.
+
+## Live Android updates (FrostFrontend)
+
+FrostFrontend now has **Graphics | Controls | Touch Settings | Updates**, with the original compact header size preserved. **Updates** displays installed version, latest public version, check status, **Check for Updates**, **Check Automatically** (saved on/off, default on), and **View Release** when a verified release exists.
+
+Like Tooie Recompiled, this is a **release-page updater**, not a silent or in-app APK installer. It checks in a background thread, never reads game files or WebView saves, and opens the matching official GitHub release in an external browser. Users choose whether to download and install the update; Android keeps app data on a properly signed in-place update.
+
+Update eligibility uses Android version **codes** (not version-name comparison), package name, the APK's installed signing-certificate fingerprint, minimum SDK, a published non-prerelease GitHub tag, and an exact APK asset name, size and SHA-256. A pinned HTTPS metadata location at `updates/android-stable.json` initially contains `latest: null`; it must only be changed to point at the signed, published APK **after** release. The release build script stages a matching `release/android-stable.json` from the actual signed APK and its signing certificate. Do not publish unverified or unpublished candidate metadata.
+
+Automatic checks run when the signed release launches, if enabled. Since Arcane launches directly into gameplay rather than Tooie's separate launcher, a one-time **View Release / Later** notice waits for a non-combat menu scene and stays out of combat. Manual checks refresh status within the Updates tab, including offline/unavailable states. Debug and isolated import-test builds show their version and tab but do **not** offer stable updates.
+
+**Networking change:** The update checker needs Android `INTERNET` permission for HTTPS metadata queries. Gameplay stays offline; WebView still refuses requests outside the private appassets origin. Before the GitHub repository and a signed GitHub release are public, live checks cannot reach a public stable update. If users do not have internet, gameplay and saves continue working.
 
 ## Release readiness
 
@@ -30,6 +42,7 @@ Both scripts refuse APKs that contain `arcane.swf` and restore any temporarily m
 - [x] Confirm Arcane8 saves survive restarts and FrostFrontend header sizing is readable.
 - [x] Implement first-run document picker, private SWF storage and game-free package verification.
 - [ ] Device-test the isolated SWF import flow, cancellation/retry, gameplay and progress persistence.
+- [ ] Device-test the fourth Updates tab, automatic-check toggle, offline status and L1/R1 navigation.
 - [ ] Produce and verify the signed, game-free v0.2.0 APK with the permanent release keystore.
 - [ ] Publish source and APK with appropriate Ruffle notices; keep original SWF/art assets out of public downloads.
 
@@ -55,7 +68,7 @@ Android WebViewAssetLoader: https://developer.android.com/reference/androidx/web
 
 The Android wrapper now explicitly suspends Ruffle (including its sounds) when the app is backgrounded and resumes on return. It also pauses/resumes WebView timers and destroys the WebView on exit. This still needs verification on the Odin: start a fight, press Home, confirm the music stops, return, then close the app from Recent Apps.
 
-The custom Android icon is supplied as a separate local asset pack; it is not included in this source-only repository.
+The public release build prefers the locally owned custom icon referenced by the user's preserved manifest backup. It does not commit that custom artwork to Git; the source-only fallback shield is not used in the public release script.
 
 ## Known limitations
 
