@@ -46,6 +46,11 @@ import java.io.InputStream;
 public class MainActivity extends Activity {
     private WebView gameView;
     private boolean gameImported, importBusy;
+    private boolean updatesAutomatic = true, updateChecking, updateCheckedThisLaunch;
+    private boolean updateAvailable, updateNoticeShown;
+    private String updateStatusText = "Not checked yet.";
+    private String updateLatestText = "Not checked";
+    private String updateReleaseUrl;
     private FrameLayout importOverlay;
     private TextView importStatus;
     private Button importButton;
@@ -98,6 +103,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        updatesAutomatic = prefs.getBoolean("updates_automatic", true);
         displayMode = prefs.getString("display_mode", "original");
         // Old "fill" crops the playfield on widescreen handhelds.
         // Migrate anyone who selected it to the usable stretched mode.
@@ -232,6 +238,7 @@ public class MainActivity extends Activity {
         if (gameImported) {
             gameView.requestFocus();
             gameView.loadUrl(ORIGIN + "/assets/index.html");
+            startUpdateCheck(false);
         } else {
             floatingOptionsButton.setVisibility(View.GONE);
             showGameImportPrompt();
@@ -350,6 +357,7 @@ public class MainActivity extends Activity {
                 refreshTouchControls();
                 gameView.requestFocus();
                 gameView.loadUrl(ORIGIN + "/assets/index.html");
+                startUpdateCheck(false);
             });
         }, "ArcaneGameImport").start();
     }
@@ -365,6 +373,7 @@ public class MainActivity extends Activity {
                 if (touchControls != null) touchControls.setGameScene(true, arena);
                 Log.d("ArcanePhase", "Ruffle scene: " + phase);
                 refreshTouchControls();
+                maybeShowUpdateNotice();
             });
         }
     }
@@ -565,6 +574,73 @@ public class MainActivity extends Activity {
         renderOptions();
     }
 
+
+    private void toggleAutomaticUpdates() {
+        updatesAutomatic = !updatesAutomatic;
+        getPreferences(MODE_PRIVATE).edit()
+            .putBoolean("updates_automatic", updatesAutomatic).apply();
+        refreshSettingRows();
+        if (updatesAutomatic) startUpdateCheck(false);
+    }
+
+    private void startUpdateCheck(boolean manual) {
+        if (!gameImported || updateChecking) return;
+        if (!manual && (!updatesAutomatic || updateCheckedThisLaunch)) return;
+        if (!manual) updateCheckedThisLaunch = true;
+        updateChecking = true;
+        updateStatusText = "Checking for published Android updates...";
+        if (optionsOpen && optionsTab == 3) renderOptions();
+        Thread worker = new Thread(() -> {
+            ArcaneUpdates.Result result = ArcaneUpdates.check(getApplicationContext());
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                updateChecking = false;
+                updateStatusText = result.status;
+                updateLatestText = result.latest;
+                updateReleaseUrl = result.releaseUrl;
+                updateAvailable = result.available;
+                if (optionsOpen && optionsTab == 3) {
+                    menuSelection = Math.max(0, Math.min(menuSelection,
+                        updateReleaseUrl == null ? 1 : 2));
+                    renderOptions();
+                }
+                maybeShowUpdateNotice();
+            });
+        }, "Arcane-update-check");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void openUpdateRelease() {
+        String url = updateReleaseUrl;
+        if (url == null || !url.matches(
+            "https://github\\.com/Frostie77/Arcane-The-Armor-Collector/releases/tag/v[0-9]+\\.[0-9]+\\.[0-9]+")) {
+            Toast.makeText(this, "No verified release available yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (android.content.ActivityNotFoundException error) {
+            Toast.makeText(this, "No browser available on this device", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void maybeShowUpdateNotice() {
+        // Arcane starts directly in the game, unlike Tooie's separate launcher.
+        // Defer the single startup notice until the game reports a menu scene.
+        if (!updateAvailable || updateNoticeShown || !sceneKnown || sceneArena ||
+            optionsOpen || backgrounded || importOverlay != null ||
+            isFinishing() || isDestroyed() || !hasWindowFocus()) return;
+        updateNoticeShown = true;
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Update available")
+            .setMessage("Arcane " + updateLatestText +
+                " is available. View the release and download the signed APK?")
+            .setPositiveButton("View Release", (dialog, which) -> openUpdateRelease())
+            .setNegativeButton("Later", (dialog, which) -> { })
+            .show();
+    }
+
     private void openOptions() {
         if (optionsOpen) return;
         if (touchControls != null) touchControls.releaseAll();
@@ -611,6 +687,7 @@ public class MainActivity extends Activity {
         gameView.evaluateJavascript(
             "if(window.arcaneSetMenuPaused)window.arcaneSetMenuPaused(false);", null);
         gameView.requestFocus();
+        maybeShowUpdateNotice();
     }
 
     private void requestOptionsClose() {
@@ -626,7 +703,7 @@ public class MainActivity extends Activity {
     }
 
     private void selectOptionsTab(int tab) {
-        if (!optionsOpen || unmappedWarningLayer != null || tab < 0 || tab > 2) return;
+        if (!optionsOpen || unmappedWarningLayer != null || tab < 0 || tab > 3) return;
         if (showingControls) {
             if (bindingAction >= 0) bindingAction = -1;
             pendingOptionsTab = tab;
@@ -806,7 +883,8 @@ public class MainActivity extends Activity {
     private void navigateOptions(int direction) {
         if (bindingAction >= 0) return;
         int count = showingControls ? 11 : showingMovementControls ? 6 :
-            showingTouchControls ? 8 : optionsTab == 1 ? 2 : 2;
+            showingTouchControls ? 8 : optionsTab == 3 ?
+                (updateReleaseUrl != null ? 3 : 2) : 2;
         menuSelection = (menuSelection + direction + count) % count;
         updateOptionsSelection();
     }
@@ -826,6 +904,9 @@ public class MainActivity extends Activity {
             }
             saveMovementPreferences();
             refreshSettingRows();
+        } else if (optionsTab == 3 && !showingControls && !showingMovementControls &&
+            !showingTouchControls && menuSelection == 1) {
+            toggleAutomaticUpdates();
         } else if (showingTouchControls) {
             switch (menuSelection) {
                 case 0: touchMode = (touchMode + direction + 3) % 3; break;
@@ -876,6 +957,10 @@ public class MainActivity extends Activity {
             showingTouchControls = false;
             menuSelection = 0;
             renderOptions();
+        } else if (optionsTab == 3) {
+            if (menuSelection == 0) startUpdateCheck(true);
+            else if (menuSelection == 1) toggleAutomaticUpdates();
+            else if (menuSelection == 2) openUpdateRelease();
         }
     }
 
@@ -920,6 +1005,9 @@ public class MainActivity extends Activity {
             int mode = Math.max(0, displayModeIndex());
             updateSettingRow(0, "Display Mode: " + DISPLAY_NAMES[mode],
                 mode == 0 ? "Unstretched · side bars" : "Full widescreen · stretched");
+        } else if (optionsTab == 3) {
+            updateSettingRow(1, "Check Automatically: " + (updatesAutomatic ? "On" : "Off"),
+                "Check at startup without interrupting gameplay");
         }
         // Never recreate the panel or animate ScrollView when a value changes.
         updateOptionsSelection();
@@ -1227,7 +1315,7 @@ public class MainActivity extends Activity {
             -1, -1, Gravity.LEFT | Gravity.CENTER_VERTICAL);
         tabsParams.rightMargin = dp(43);
         header.addView(tabs, tabsParams);
-        String[] tabNames = {"Graphics", "Controls", "Touch Settings"};
+        String[] tabNames = {"Graphics", "Controls", "Touch Settings", "Updates"};
         for (int i = 0; i < tabNames.length; i++) {
             final int tabIndex = i;
             boolean selected = optionsTab == i;
@@ -1250,6 +1338,17 @@ public class MainActivity extends Activity {
         FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
             dp(33), dp(33), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(close, closeParams);
+
+        if (optionsTab == 3) {
+            String details = "Installed: " + ArcaneUpdates.installedVersion(this) +
+                "\nLatest: " + updateLatestText +
+                "\n" + updateStatusText;
+            TextView info = makeText(details, 15, 0xFFF0E3D1, 0xAA30253B);
+            info.setPadding(dp(12), dp(8), dp(12), dp(8));
+            LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-1, -2);
+            statusParams.bottomMargin = dp(6);
+            panel.addView(info, statusParams);
+        }
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
@@ -1310,6 +1409,15 @@ public class MainActivity extends Activity {
         } else if (optionsTab == 1) {
             addOptionRow(rows, scroll, "Button Mapping", "Assign controller buttons", 0);
             addOptionRow(rows, scroll, "Movement Settings", "Stick directions, deadzone and inversion", 1);
+        } else if (optionsTab == 3) {
+            addOptionRow(rows, scroll, "Check for Updates",
+                "Check the verified public Android release on GitHub", 0);
+            addOptionRow(rows, scroll,
+                "Check Automatically: " + (updatesAutomatic ? "On" : "Off"),
+                "Check at startup without interrupting gameplay", 1);
+            if (updateReleaseUrl != null)
+                addOptionRow(rows, scroll, "View Release",
+                    "Open the verified GitHub release page; install updates manually", 2);
         } else {
             int mode = Math.max(0, displayModeIndex());
             addOptionRow(rows, scroll, "Display Mode: " + DISPLAY_NAMES[mode],
@@ -1353,11 +1461,11 @@ public class MainActivity extends Activity {
             return true;
         }
         if (code == KeyEvent.KEYCODE_BUTTON_L1) {
-            selectOptionsTab((optionsTab + 2) % 3);
+            selectOptionsTab((optionsTab + 3) % 4);
             return true;
         }
         if (code == KeyEvent.KEYCODE_BUTTON_R1) {
-            selectOptionsTab((optionsTab + 1) % 3);
+            selectOptionsTab((optionsTab + 1) % 4);
             return true;
         }
         switch (code) {
@@ -1415,8 +1523,10 @@ public class MainActivity extends Activity {
     }
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) setImmersive();
-        else if (gamepad != null) gamepad.release();
+        if (hasFocus) {
+            setImmersive();
+            maybeShowUpdateNotice();
+        } else if (gamepad != null) gamepad.release();
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (!gameImported) {
@@ -1493,6 +1603,7 @@ public class MainActivity extends Activity {
                 "if (window.arcaneClearMovementKeys) window.arcaneClearMovementKeys();",
                 null);
         }
+        maybeShowUpdateNotice();
     }
     @Override public void onDestroy() {
         backgrounded = true;
