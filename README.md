@@ -2,7 +2,7 @@
 
 A **small, unofficial personal-use Android wrapper** for a classic Flash (SWF) game, built with Ruffle and an Android WebView. This project is NOT affiliated with the game's original creators or Ruffle.
 
-**Status:** v0.2.0-rc2 candidate. Native Android WebView/Ruffle gameplay, the Odin 2 Portal controller, FrostFrontend pause/options, aspect modes, remapping, unmapped warnings and persistent mappings have been tested on-device. **Touch controls are newly implemented and must pass on-device testing before a final release.**
+**Status:** v0.2.0-rc3 candidate. Native Android WebView/Ruffle gameplay, the Odin 2 Portal controller, FrostFrontend pause/options, aspect modes, remapping, unmapped warnings and persistent mappings have been tested on-device. **Touch controls are newly implemented and must pass on-device testing before a final release.**
 
 ## Goal
 
@@ -48,7 +48,7 @@ The custom Android icon is supplied as a separate local asset pack; it is not in
 - Input mapping is provisional; Android gamepad testing is essential.
 - Flash network calls are disabled; old MochiAds/highscores may not work.
 - Save files use WebView local storage and may require additional changes.
-- Touchscreen controls are present in v0.2.0-rc2 but still require live testing.
+- Touchscreen controls are present in v0.2.0-rc3 but still require live testing.
 - Launcher icon artwork is installed locally for the developer's build; the source repository does not contain original game artwork.
 
 
@@ -67,7 +67,7 @@ In **Controller Settings**, the user can rebind Attack, Alternate Attack, Switch
 
 Left stick/D-pad movement and right-stick aiming remain fixed in the physical controller editor, preserving tested movement recovery and R2/cursor behaviour.
 
-### Touchscreen settings (v0.2.0-rc2)
+### Touchscreen settings (v0.2.0-rc3)
 
 Under **FrostFrontend → Touchscreen Settings**:
 
@@ -75,12 +75,12 @@ Under **FrostFrontend → Touchscreen Settings**:
 - **Control Size**: Small / Medium / Large.
 - **Opacity**: Low / Medium / High.
 - **Movement Pad**: Joystick or digital D-pad; the D-pad emulates discrete directions rather than the analogue deadzone.
-- **Touch Aiming**: Relative or Direct. Relative (default) provides a lower right-hand touch area: swipe to move the existing crosshair, tap or hold to attack. Direct lets you tap targets in the game area using Ruffle's normal input.
+- **Touch Aiming**: Relative or Direct. Relative (default) uses an invisible full-screen touch layer, excluding movement/action buttons: swipe anywhere to move the existing crosshair, tap or hold to attack. Direct uses absolute screen position for aiming/attack through the same input layer to support a second finger while the virtual movement pad remains pressed; the native crosshair is hidden in Direct mode.
 - **Sides**: Standard or Swapped (exchange the movement pad and the relative-aim area/action sides).
 - **Position**: Edge / Normal / Inset (distance from the screen edge).
 - **Reset Touch Controls**: restore default virtual layout.
 
-The movement view, aim touch surface, and action views handle separate finger presses. In Relative aim mode, touches outside the lower right-hand aim area and buttons pass to the original Flash game. In Direct mode the lower right-hand aim surface is absent. The on-screen buttons are independent of physical controller assignments, so an unmapped hardware action is still available from touch when touch controls are shown.
+The movement view, invisible full-screen aim layer, and action buttons support distinct fingers, with movement and aim/attack routed independently in both aiming modes. The virtual D-pad draws four individual buttons with gaps between them; sliding between directions continues to work. The on-screen buttons remain independent of physical controller assignments.
 
 For the **AYN Odin 2 Portal**, choose Touch Controls: **On** to test the overlay despite its built-in gamepad. The current setting is saved between launches. During FrostFrontend pause/options or while Android is backgrounded, touch inputs are released and the virtual controls are hidden.
 
@@ -100,3 +100,6 @@ For the **AYN Odin 2 Portal**, choose Touch Controls: **On** to test the overlay
 The tabbed FrostFrontend layout and expanded window were tested. Its header now reads **SETTINGS**. The touch-control aim stick and separate Fire/Alt buttons were removed; Relative aim now provides a thumb-sized workflow within the lower right-hand area, moving the crosshair via drag while touching to attack. Direct tap-to-aim is retained as an option. The five secondary-action buttons remain. Users can now swap the touch movement joystick for a digital D-pad. Adjustable 4-way/8-way analogue movement, stick deadzone and axis inversion are available under **Controls → Movement Settings**. The new relative aim and virtual D-pad still require on-device testing.
 
 **Known issue being investigated:** Arcane did not retain some completed-level progress in user testing. Do not assume saving works until we determine whether the Flash game writes save data and whether Ruffle/WebView restores it across launches. Avoid wiping app data during testing.
+
+
+**v0.2.0-rc3 pending device checks:** Direct-mode move + aim + attack at once; simultaneous movement with virtual D-pad and joystick; Relative mode aiming across the full screen without visible boxed area or fallback to Direct aiming; Direct mode hides native crosshair. Saving completed-level progress is still unresolved; do not publish a final release until tested.
