@@ -2,6 +2,8 @@
 app/src/main/assets/www/arcane.swf
 # Temporary local backup while building game-free test/release APKs
 .private-game/
+# Locally signed public APKs, never source control
+release/
 # Fetched third-party Ruffle runtime
 app/src/main/assets/www/ruffle/*
 !app/src/main/assets/www/ruffle/.gitkeep
