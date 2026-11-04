@@ -2,7 +2,7 @@
 
 A **small, unofficial personal-use Android wrapper** for a classic Flash (SWF) game, built with Ruffle and an Android WebView. This project is NOT affiliated with the game's original creators or Ruffle.
 
-**Status:** v0.2.0-rc3 candidate. Native Android WebView/Ruffle gameplay, the Odin 2 Portal controller, FrostFrontend pause/options, aspect modes, remapping, unmapped warnings and persistent mappings have been tested on-device. **Touch controls are newly implemented and must pass on-device testing before a final release.**
+**Status:** v0.2.0-rc4 candidate. Native Android WebView/Ruffle gameplay, the Odin 2 Portal controller, FrostFrontend pause/options, aspect modes, remapping, unmapped warnings and persistent mappings have been tested on-device. **Touch controls are newly implemented and must pass on-device testing before a final release.**
 
 ## Goal
 
@@ -48,7 +48,7 @@ The custom Android icon is supplied as a separate local asset pack; it is not in
 - Input mapping is provisional; Android gamepad testing is essential.
 - Flash network calls are disabled; old MochiAds/highscores may not work.
 - Save files use WebView local storage and may require additional changes.
-- Touchscreen controls are present in v0.2.0-rc3 but still require live testing.
+- Touchscreen controls are present in v0.2.0-rc4 but still require live testing.
 - Launcher icon artwork is installed locally for the developer's build; the source repository does not contain original game artwork.
 
 
@@ -67,7 +67,7 @@ In **Controller Settings**, the user can rebind Attack, Alternate Attack, Switch
 
 Left stick/D-pad movement and right-stick aiming remain fixed in the physical controller editor, preserving tested movement recovery and R2/cursor behaviour.
 
-### Touchscreen settings (v0.2.0-rc3)
+### Touchscreen settings (v0.2.0-rc4)
 
 Under **FrostFrontend → Touchscreen Settings**:
 
@@ -75,7 +75,7 @@ Under **FrostFrontend → Touchscreen Settings**:
 - **Control Size**: Small / Medium / Large.
 - **Opacity**: Low / Medium / High.
 - **Movement Pad**: Joystick or digital D-pad; the D-pad emulates discrete directions rather than the analogue deadzone.
-- **Touch Aiming**: Relative or Direct. Relative (default) uses an invisible full-screen touch layer, excluding movement/action buttons: swipe anywhere to move the existing crosshair, tap or hold to attack. Direct uses absolute screen position for aiming/attack through the same input layer to support a second finger while the virtual movement pad remains pressed; the native crosshair is hidden in Direct mode.
+- **Touch Aiming**: Relative or Direct. **Relative (default)** now automatically uses direct mouse-style touch in Arcane's inventory, level selection, and other menu scenes; it switches to relative crosshair aiming as the arena scene begins, then back to direct when the game returns to menus. **Direct** always uses absolute screen touch coordinates. Both use the same independent multi-touch input layer, and the native cursor hides whenever Direct input is active. If an unrecognised SWF does not report its scene, relative mode uses a short-tap-direct / swipe-relative fallback.
 - **Sides**: Standard or Swapped (exchange the movement pad and the relative-aim area/action sides).
 - **Position**: Edge / Normal / Inset (distance from the screen edge).
 - **Reset Touch Controls**: restore default virtual layout.
@@ -102,4 +102,13 @@ The tabbed FrostFrontend layout and expanded window were tested. Its header now 
 **Known issue being investigated:** Arcane did not retain some completed-level progress in user testing. Do not assume saving works until we determine whether the Flash game writes save data and whether Ruffle/WebView restores it across launches. Avoid wiping app data during testing.
 
 
-**v0.2.0-rc3 pending device checks:** Direct-mode move + aim + attack at once; simultaneous movement with virtual D-pad and joystick; Relative mode aiming across the full screen without visible boxed area or fallback to Direct aiming; Direct mode hides native crosshair. Saving completed-level progress is still unresolved; do not publish a final release until tested.
+**v0.2.0-rc4 pending device checks:** Direct-mode move + aim + attack at once; simultaneous movement with virtual D-pad and joystick; Relative mode aiming across the full screen without visible boxed area or fallback to Direct aiming; Direct mode hides native crosshair. Saving completed-level progress is still unresolved; do not publish a final release until tested.
+
+
+### v0.2.0-rc4 scene-aware touch and save testing
+
+- The Android asset loader temporarily instruments the user's **local** original `arcane.swf` **in memory only**; it inserts an AS2 FSCommand on the SWF's 25 main timeline frames. Original file is not modified, and the SWF remains excluded from Git.
+- Arcane root timeline frame 20 is treated as arena combat; remaining root frames are menu/preparation/results. Ruffle forwards these scene markers to the Android touchscreen controller. Scene classification should be checked on a real Odin before release.
+- When Relative is selected, a menu phase enables **Direct** touch for inventory selection. When the arena begins, the touch layer uses **Relative** swipe/hold-to-attack automatically. On returning to menus, it restores Direct. Selecting Direct explicitly keeps Direct regardless of phase.
+- Ruffle `allowNetworking: 'none'` was preventing the Flash SharedObject local-save API and FSCommand. We use `allowNetworking: 'all'` **inside Ruffle** so saving and scene notifications can function; Android still declares **no INTERNET permission**, and the WebView only serves trusted appassets URLs and rejects external requests. The application is not granted internet access.
+- **Validation needed:** inventory touch selects equipment; entering/exiting arena switches modes automatically; tapping/holding attacks with movement working; completed level progress is retained after force-stop and relaunch. Do not clear Android app data during this test.
