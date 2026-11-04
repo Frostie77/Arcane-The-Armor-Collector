@@ -117,3 +117,12 @@ The tabbed FrostFrontend layout and expanded window were tested. Its header now 
 ### Diagnostic build v0.2.0-rc5-debug (not a public release)
 
 The previous scene callback only reported `menu` even when the user entered combat. Instrumentation now sends each SWF root-frame index before the frame's own ActionScript; logcat includes `ArcaneRootFrame` and `ArcanePhase` entries to verify the actual menu → arena transition. Ruffle also logs `ArcaneSaveDiag` (WebView localStorage key names and value lengths only, never save contents) at startup, every 15 seconds, and after writes. This separates cases where the game never saves, Ruffle never writes, and the WebView fails to persist data. The Android app data and original SWF are not reset. The spaced D-pad now uses font-independent vector arrows centred geometrically in each button. Do not publish this diagnostic APK as a finished release.
+
+
+### v0.2.0-rc6-debug: targeted scene and save fixes
+
+The full original Arcane SWF was inspected. The old frame-20-as-arena assumption was wrong: frame 20 contains inter-level advertising/results code. The gameplay setup scripts occur on frames 3-5 and 11-18; these are now reported as arena in the in-memory root timeline instrumentation. The full frame diagnostics remain in logcat, so gameplay transitions can be verified from the Odin instead of inferred from a static guess.
+
+The original SWF gets `savefile = SharedObject.getLocal("Arcane8")` but its game code does not explicitly call `savefile.flush()`; its only `flush` string is from an unrelated MochiServices library. Ruffle's web backend uses browser localStorage for SharedObject data, and the previous user's log showed `localStorage=0` before and after restarting. This diagnostic build **adds in-memory AVM1 actions** to schedule `_root.savefile.flush()` every five seconds and on root scene frame transitions. It does not rewrite the save object or modify the original SWF on disk. **Unverified:** whether the Android WebView actually receives the expected storage writes and whether completed level progress persists after relaunch. Do not clear app data during tests.
+
+The virtual D-pad arrows are drawn as geometrically centred vectors rather than relying on Unicode font metrics. This version is for testing and must not be publicly released as final.
