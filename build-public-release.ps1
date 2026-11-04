@@ -121,13 +121,47 @@ if ($LASTEXITCODE -ne 0) { throw 'zipalign failed.' }
 Write-Host 'Sign the release using your permanent keystore password when prompted.'
 & $apksigner sign --ks $keystore --ks-key-alias arcane-release --out $signed $aligned
 if ($LASTEXITCODE -ne 0) { throw 'Release APK signing failed.' }
-& $apksigner verify --verbose --print-certs $signed
+$verify = @(& $apksigner verify --verbose --print-certs $signed)
 if ($LASTEXITCODE -ne 0) { throw 'Release APK signature verification failed.' }
+$verify | ForEach-Object { Write-Host $_ }
+$signerMatch = [regex]::Match(($verify -join [Environment]::NewLine), 'Signer #1 certificate SHA-256 digest:\s*([0-9A-Fa-f]{64})')
+if (-not $signerMatch.Success) {
+    throw 'Could not verify the permanent release signing certificate fingerprint.'
+}
+$certSha256 = $signerMatch.Groups[1].Value.ToLowerInvariant()
 Confirm-GameFree $signed
 Remove-Item $aligned -Force
 $hash = (Get-FileHash -Algorithm SHA256 $signed).Hash.ToLowerInvariant()
 Set-Content -Path (Join-Path $releaseDir 'Arcane-v0.2.0-Android.sha256.txt') -Value "$hash  Arcane-v0.2.0-Android.apk"
+
+# Stage a signed-APK-specific update feed for publication AFTER the actual
+# matching GitHub Release and its APK download have been published.
+$sourceSha = (& git rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceSha -notmatch '^[a-f0-9]{40}
+) {
+    throw 'Could not identify the release source commit.'
+}
+$feed = [ordered]@{
+    schema_version = 1
+    channel = 'stable'
+    package = 'io.github.arcanearmorcollector.android'
+    latest = [ordered]@{
+        package = 'io.github.arcanearmorcollector.android'
+        version_name = '0.2.0'
+        version_code = 16
+        release_tag = 'v0.2.0'
+        source_commit = $sourceSha
+        certificate_sha256 = $certSha256
+        min_sdk = 26
+        apk_asset = 'Arcane-v0.2.0-Android.apk'
+        apk_size = (Get-Item $signed).Length
+        apk_sha256 = $hash
+    }
+}
+$feedFile = Join-Path $releaseDir 'android-stable.json'
+$feed | ConvertTo-Json -Depth 5 | Set-Content -Path $feedFile -Encoding UTF8
 Write-Host 'PASS: SIGNED AND GAME-FREE PUBLIC APK'
 Write-Host "APK: $signed"
 Write-Host "SHA256: $hash"
+Write-Host "Update feed STAGED (do not publish until GitHub APK is live): $feedFile"
 Write-Host "Keep the keystore safe: $keystore"
