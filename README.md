@@ -185,3 +185,18 @@ After rc10 still let the character walk left with **no input** and didn't activa
 - FrostFrontend navigation now occupies **one top row**: Graphics, Controls, Touch Settings, and a reserved right-side exit X. The standalone SETTINGS heading and help/navigation text row were removed, expanding space for the scrollable settings. The controller button assignment prompt is retained where relevant.
 - Single-owner Ruffle keyboard movement, saved Arcane8 progress/flush, post-fight Direct selection, and ordinary Relative attack controls were not rewritten.
 - JavaScript syntax and an isolated HUD event-order test passed: pointermove/down/up/restore was verified. Java code syntax and cross-file references were inspected. This assistant has **not compiled Android or tested the actual device**. Use `test-input-rc12.ps1` after pulling main; it builds/installs in place, prompts for the 5 tests, and prints short input logs. Do not uninstall or clear the app data.
+
+
+### v0.2.0-rc13-debug — FrostFrontend settings density and stereo audio investigation
+
+The user approved a more compact settings layout and reported game sound was somewhat distorted and seemed to play out of only one speaker of the Odin 2 Portal. This version deliberately **does not rewrite the working rc12 controls, scene detector or save-flush logic**.
+
+**Settings layout:** The menu retains Graphics / Controls / Touch Settings navigation and the close icon on a single top bar (now 38dp high). The panel has 12dp side padding. Settings are now compact, single-line, **title on the left and current value right-aligned**, with only the selected row revealing its smaller description. Each item stays a direct child of the list so existing menu selection indices, controller navigation, scrolling and immediate value changes remain intact. The help/navigation row stays removed. Unmapped controller warnings remain visible in the new layout.
+
+**Original source audio audit:** The user's unmodified Flash 8 SWF has **38 DefineSound tags**, all MPEG Layer III / MP3, **mono**, at SWF SoundRate 1 = approximately **11.025 kHz**. This is inherently low-fidelity source material and could contribute to rough audio, but **mono should normally be audible through both speakers**. No Java WebView setting or Ruffle configuration in this repo explicitly forces mono or a left/right channel.
+
+**Diagnostic:** Graphics now includes **Speaker Test: Left → Right → Both**. It plays a quiet 330 Hz WebAudio sine tone separately to the left, right and both channels using a StereoPannerNode, and logs `ArcaneAudioTest sampleRate=... outputChannels=... maxChannels=...`, each step, and completion/failure through `ArcaneRuffle`. It uses a separate AudioContext only while testing and **does not change** the game's Ruffle mixer or original MP3 audio. This is a diagnostic aid, not a proven fix to the sound issue.
+
+**Interpretation:** If Left, Right and Both tones work correctly on the Odin but game audio still sounds one-sided, investigate Ruffle's Flash mono sound mixing / source decode / Android WebView audio routing; compare with the original SWF in desktop Ruffle. If the independent test is also one-sided, check the Odin's Android balance/mono audio settings, speaker functionality and WebView audio output before changing the source game.
+
+**Validation limits:** The HTML JavaScript parses, and source-level layout and stereo-test checks were performed; no Odin run or completed Android APK compile has been performed on behalf of the user. Run `test-ui-audio-rc13.ps1` after pulling main for the in-place debug APK build, install and guided audio/UI test; do not uninstall or clear data.
