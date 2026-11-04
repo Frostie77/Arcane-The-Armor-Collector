@@ -28,6 +28,11 @@ final class GamepadBridge {
     // This reduces ghost movement from analogue stick drift and axis noise.
     private static final float MOVE_ON = 0.38f;
     private static final float MOVE_OFF = 0.22f;
+    // Movement is translated to Arcane's fixed WASD directions. D-pad
+    // remains digital; only physical/virtual analogue movement uses this.
+    private int movementMode = 0; // 0 = 8-way, 1 = 4-way
+    private float moveThreshold = MOVE_ON;
+    private boolean invertMoveX, invertMoveY;
     // Re-send a neutral key-up after the WebView has had time to process a
     // scene change or touch. This recovers a key release lost by Ruffle.
     private static final long NEUTRAL_KEY_RECOVERY_MS = 180L;
@@ -160,10 +165,7 @@ final class GamepadBridge {
         boolean priorStickLeft = stickLeft, priorStickRight = stickRight;
         boolean priorHatUp = hatUp, priorHatDown = hatDown;
         boolean priorHatLeft = hatLeft, priorHatRight = hatRight;
-        stickLeft = movementActive(-leftX, stickLeft);
-        stickRight = movementActive(leftX, stickRight);
-        stickUp = movementActive(-leftY, stickUp);
-        stickDown = movementActive(leftY, stickDown);
+        applyStickDirection(leftX, leftY, false);
 
         float hx = event.getAxisValue(MotionEvent.AXIS_HAT_X);
         float hy = event.getAxisValue(MotionEvent.AXIS_HAT_Y);
@@ -210,12 +212,63 @@ final class GamepadBridge {
         return Math.abs(value) <= DEADZONE ? 0 : value;
     }
 
-    void setTouchMovement(float x, float y) {
-        touchLeft = x < -0.36f;
-        touchRight = x > 0.36f;
-        touchUp = y < -0.36f;
-        touchDown = y > 0.36f;
+    void setMovementOptions(int mode, float threshold, boolean invertX, boolean invertY) {
+        movementMode = Math.max(0, Math.min(1, mode));
+        moveThreshold = Math.max(0.27f, Math.min(0.55f, threshold));
+        invertMoveX = invertX;
+        invertMoveY = invertY;
+        // Clear old axis state when controls change. Never synthesize a
+        // movement key-down while the user is inside the options overlay.
+        stickUp = stickDown = stickLeft = stickRight = false;
+        touchUp = touchDown = touchLeft = touchRight = false;
         updateMovement();
+    }
+
+    void setTouchMovement(float x, float y) {
+        applyStickDirection(x, y, true);
+        updateMovement();
+    }
+
+    private void applyStickDirection(float x, float y, boolean touch) {
+        if (invertMoveX) x = -x;
+        if (invertMoveY) y = -y;
+        boolean prevUp = touch ? touchUp : stickUp;
+        boolean prevDown = touch ? touchDown : stickDown;
+        boolean prevLeft = touch ? touchLeft : stickLeft;
+        boolean prevRight = touch ? touchRight : stickRight;
+        float dominant = Math.max(Math.abs(x), Math.abs(y));
+        float release = moveThreshold * (MOVE_OFF / MOVE_ON);
+        boolean previouslyActive = prevUp || prevDown || prevLeft || prevRight;
+        boolean enabled = dominant > (previouslyActive ? release : moveThreshold);
+        boolean up = false, down = false, left = false, right = false;
+        if (enabled) {
+            boolean horizontal = Math.abs(x) >= Math.abs(y);
+            boolean vertical = Math.abs(y) >= Math.abs(x);
+            // 8-way uses a 28-degree cone on each side of the diagonal.
+            // 4-way selects only the most significant direction.
+            if (movementMode == 0 && dominant > 0f) {
+                float minor = Math.min(Math.abs(x), Math.abs(y));
+                if (minor >= dominant * 0.53f) {
+                    horizontal = true;
+                    vertical = true;
+                }
+            }
+            if (horizontal) {
+                left = x < 0;
+                right = x > 0;
+            }
+            if (vertical) {
+                up = y < 0;
+                down = y > 0;
+            }
+        }
+        if (touch) {
+            touchUp = up; touchDown = down;
+            touchLeft = left; touchRight = right;
+        } else {
+            stickUp = up; stickDown = down;
+            stickLeft = left; stickRight = right;
+        }
     }
 
     void setTouchAim(float x, float y, boolean active) {
@@ -255,10 +308,6 @@ final class GamepadBridge {
     void showTouchCursor() {
         initializePointer();
         if (pointerInitialized) clampPointer();
-    }
-
-    private static boolean movementActive(float value, boolean alreadyHeld) {
-        return value > (alreadyHeld ? MOVE_OFF : MOVE_ON);
     }
 
     private void updateMovement() {
