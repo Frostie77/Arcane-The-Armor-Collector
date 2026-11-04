@@ -177,6 +177,11 @@ final class TouchControlsOverlay extends FrameLayout {
                     float x = event.getX(0), y = event.getY(0);
                     if (!relativeAim || !gamePhaseKnown || !gameArena ||
                         !bridge.isCombatHudTouch(x, y)) return false;
+                    // The movement pad must win if the user swaps it onto
+                    // the same side as an in-game HUD icon. Protect the
+                    // actual movement View from the higher HUD layer.
+                    if (inPaddedBounds(directionPad, x, y, 0) ||
+                        inPaddedBounds(movePad, x, y, 0)) return false;
                     pointer = event.getPointerId(0);
                     bridge.beginTouchHud(x, y);
                     return true;
