@@ -590,6 +590,8 @@ public class MainActivity extends Activity {
     private boolean restoreCachedUpdate() {
         if (!ArcaneUpdates.isSignedRelease(this)) return false;
         SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        if (prefs.getLong("updates_cached_installed_code", -1) !=
+            ArcaneUpdates.installedCode(this)) return false;
         long checked = prefs.getLong("updates_checked_at", 0);
         long age = System.currentTimeMillis() - checked;
         long ttl = prefs.getBoolean("updates_cached_verified", false) ?
@@ -628,6 +630,8 @@ public class MainActivity extends Activity {
                 if (ArcaneUpdates.isSignedRelease(this)) {
                     getPreferences(MODE_PRIVATE).edit()
                         .putLong("updates_checked_at", System.currentTimeMillis())
+                        .putLong("updates_cached_installed_code",
+                            ArcaneUpdates.installedCode(this))
                         .putBoolean("updates_cached_verified", result.verified)
                         .putString("updates_cached_status", result.status)
                         .putString("updates_cached_latest", result.latest)
