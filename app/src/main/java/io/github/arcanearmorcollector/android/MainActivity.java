@@ -891,27 +891,20 @@ public class MainActivity extends Activity {
             Math.max(1, Math.min(dp(600), screenH - dp(44))), Gravity.CENTER);
         optionsOverlay.addView(panel, panelParams);
 
-        // Persistent header: the close control replaces "Resume Game".
+        // FrostFrontend: keep section headings on the top line beside Close.
+        // Removes the separate SETTINGS title row, giving the scrollable
+        // settings list much more vertical room on landscape handhelds.
         FrameLayout header = new FrameLayout(this);
-        panel.addView(header, new LinearLayout.LayoutParams(-1, dp(49)));
-        TextView title = makeText("SETTINGS", 22, 0xFFFFE0A1, 0x00000000);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        FrameLayout.LayoutParams titleParams = new FrameLayout.LayoutParams(
-            -1, -1, Gravity.LEFT | Gravity.CENTER_VERTICAL);
-        titleParams.rightMargin = dp(55);
-        header.addView(title, titleParams);
-        CloseIconView close = new CloseIconView();
-        close.setOnClickListener(v -> requestOptionsClose());
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
-            dp(39), dp(39), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        header.addView(close, closeParams);
+        header.setContentDescription("FrostFrontend settings navigation");
+        panel.addView(header, new LinearLayout.LayoutParams(-1, dp(48)));
 
-        // Same three tabs on every page; controller L1/R1 switches tabs.
+        // Leave a permanent right-hand slot for the exit X.
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams tabsParams = new LinearLayout.LayoutParams(-1, dp(46));
-        tabsParams.bottomMargin = dp(4);
-        panel.addView(tabs, tabsParams);
+        FrameLayout.LayoutParams tabsParams = new FrameLayout.LayoutParams(
+            -1, -1, Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        tabsParams.rightMargin = dp(54);
+        header.addView(tabs, tabsParams);
         String[] tabNames = {"Graphics", "Controls", "Touch Settings"};
         for (int i = 0; i < tabNames.length; i++) {
             final int tabIndex = i;
@@ -920,21 +913,26 @@ public class MainActivity extends Activity {
                 selected ? 0xFFFFDFA2 : 0xFFDDD6E0,
                 selected ? 0xFF433147 : 0xFF2B2432);
             tab.setGravity(Gravity.CENTER);
-            tab.setPadding(dp(5), dp(5), dp(5), dp(5));
+            tab.setPadding(dp(4), dp(3), dp(4), dp(3));
             tab.setBackground(roundedBackground(selected ? 0xFF433147 : 0xFF2B2432,
                 selected ? 0xFFD0AA69 : 0xFF564761, 9));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, 1f);
-            if (i > 0) lp.leftMargin = dp(8);
+            if (i > 0) lp.leftMargin = dp(6);
             tabs.addView(tab, lp);
             tab.setOnClickListener(v -> selectOptionsTab(tabIndex));
         }
+        CloseIconView close = new CloseIconView();
+        close.setOnClickListener(v -> requestOptionsClose());
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
+            dp(39), dp(39), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        header.addView(close, closeParams);
 
         String hint = bindingAction >= 0
             ? "Press a controller button · B: Cancel"
             : "D-pad / Stick: Move · A: Select · L1/R1: Tabs · B: Back · Start: Close";
         TextView help = makeText(hint, 11, 0xFFDDD2BF, 0x00000000);
         help.setGravity(Gravity.CENTER);
-        panel.addView(help, new LinearLayout.LayoutParams(-1, dp(34)));
+        panel.addView(help, new LinearLayout.LayoutParams(-1, dp(23)));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
