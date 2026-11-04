@@ -148,10 +148,10 @@ final class TouchControlsOverlay extends FrameLayout {
         private int gestureMode, activePointer = -1;
         private float lastX, lastY, downX, downY;
         private boolean relativeGestureStarted;
-        private static final long HOLD_TO_RELATIVE_MS = 260L;
+        private static final long HOLD_TO_RELATIVE_MS = 170L;
 
         private final Runnable holdToRelative = () -> {
-            if (activePointer != -1 && gestureMode == 2 && !relativeGestureStarted) {
+            if (activePointer != -1 && gestureMode != 0 && !relativeGestureStarted) {
                 relativeGestureStarted = true;
                 bridge.beginTouchTrackpad();
             }
@@ -160,7 +160,7 @@ final class TouchControlsOverlay extends FrameLayout {
         AimSurface(Context context) {
             super(context);
             setClickable(true);
-            setContentDescription("Direct inventory touch; relative arena aim and attack");
+            setContentDescription("Tap the game HUD directly; swipe or hold for relative combat aim");
         }
 
         private int selectMode() {
@@ -185,7 +185,7 @@ final class TouchControlsOverlay extends FrameLayout {
                 bridge.endTouchDirect();
             } else if (relativeGestureStarted) {
                 bridge.endTouchTrackpad();
-            } else if (gestureMode == 2 && commitTap) {
+            } else if (commitTap) {
                 bridge.tapTouchDirect(x, y);
             }
             activePointer = -1;
@@ -202,10 +202,11 @@ final class TouchControlsOverlay extends FrameLayout {
                     relativeGestureStarted = false;
                     if (gestureMode == 0) {
                         bridge.beginTouchDirect(lastX, lastY);
-                    } else if (gestureMode == 1) {
-                        relativeGestureStarted = true;
-                        bridge.beginTouchTrackpad();
                     } else {
+                        // Quick taps remain direct even during arena combat:
+                        // this makes potions, in-game options and stats work
+                        // without guessing HUD positions. Swiping or holding
+                        // turns into relative crosshair aiming and attack.
                         postDelayed(holdToRelative, HOLD_TO_RELATIVE_MS);
                     }
                     return true;
@@ -217,7 +218,7 @@ final class TouchControlsOverlay extends FrameLayout {
                             if (gestureMode == 0) {
                                 bridge.moveTouchDirect(x, y);
                             } else {
-                                if (gestureMode == 2 && !relativeGestureStarted &&
+                                if (!relativeGestureStarted &&
                                     Math.hypot(x - downX, y - downY) >= dp(11)) {
                                     removeCallbacks(holdToRelative);
                                     relativeGestureStarted = true;
