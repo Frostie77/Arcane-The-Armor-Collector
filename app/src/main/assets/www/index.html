@@ -207,10 +207,10 @@ window.arcaneControllerAim = (nx, ny) => {
     }));
   }
 };
-// Ruffle can miss Android WebView's key-up when focus changes.
-// A key-down/up pair clears stale movement in the Flash game, but W is
-// Arcane's JUMP command: never synthesize a W press during recovery.
-// Use release-only for W; tap A/S/D to clear their stuck states.
+// Release-only recovery for movement after WebView focus or touch changes.
+// Synthetic key-downs on A/S/D were making the character step or turn in
+// the opposite direction after a movement gesture ended. Never press a
+// movement key during recovery, including after a scene transition.
 window.arcaneClearMovementKeys = () => {
   if (!arcanePlayer || arcaneInBackground) return;
   try {
@@ -222,14 +222,13 @@ window.arcaneClearMovementKeys = () => {
         repeat: false
       }));
     };
-    send('keyup', 'w', 'KeyW', 87);
     for (const [key, code, keyCode] of [
-      ['a', 'KeyA', 65], ['s', 'KeyS', 83], ['d', 'KeyD', 68]
+      ['w', 'KeyW', 87], ['a', 'KeyA', 65],
+      ['s', 'KeyS', 83], ['d', 'KeyD', 68]
     ]) {
-      send('keydown', key, code, keyCode);
       send('keyup', key, code, keyCode);
     }
-    console.info('ArcaneMovementRecovery: W release; A/S/D down-up');
+    console.info('ArcaneMovementRecovery: WASD release-only');
   } catch (error) {
     console.warn('ArcaneMovementRecovery: failed', error);
   }
