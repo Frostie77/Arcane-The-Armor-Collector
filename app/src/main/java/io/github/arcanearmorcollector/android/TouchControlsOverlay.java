@@ -160,7 +160,7 @@ final class TouchControlsOverlay extends FrameLayout {
         AimSurface(Context context) {
             super(context);
             setClickable(true);
-            setContentDescription("Tap the game HUD directly; swipe or hold for relative combat aim");
+            setContentDescription("Tap to fire at crosshair; swipe or hold for relative aim");
         }
 
         private int selectMode() {
@@ -186,7 +186,11 @@ final class TouchControlsOverlay extends FrameLayout {
             } else if (relativeGestureStarted) {
                 bridge.endTouchTrackpad();
             } else if (commitTap) {
-                bridge.tapTouchDirect(x, y);
+                // A short tap in Relative combat attacks at the saved
+                // crosshair, NOT at the screen position of the finger.
+                // Direct taps are only used on the genuine menu/results
+                // screens. HUD hit areas need separate calibrated regions.
+                bridge.tapTouchRelative();
             }
             activePointer = -1;
             relativeGestureStarted = false;
@@ -203,10 +207,10 @@ final class TouchControlsOverlay extends FrameLayout {
                     if (gestureMode == 0) {
                         bridge.beginTouchDirect(lastX, lastY);
                     } else {
-                        // Quick taps remain direct even during arena combat:
-                        // this makes potions, in-game options and stats work
-                        // without guessing HUD positions. Swiping or holding
-                        // turns into relative crosshair aiming and attack.
+                        // Short taps fire at the existing crosshair.
+                        // Swiping or holding engages relative movement/fire.
+                        // Never send arbitrary arena taps through Direct
+                        // aiming: that changes facing towards the finger.
                         postDelayed(holdToRelative, HOLD_TO_RELATIVE_MS);
                     }
                     return true;
