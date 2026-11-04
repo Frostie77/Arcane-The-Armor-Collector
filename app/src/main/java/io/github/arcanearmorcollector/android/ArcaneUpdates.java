@@ -35,6 +35,13 @@ final class ArcaneUpdates {
         "https://api.github.com/repos/" + REPOSITORY + "/releases/tags/";
     private static final int FEED_LIMIT = 16 * 1024;
     private static final int RELEASE_LIMIT = 192 * 1024;
+    private static boolean noticeShownThisProcess;
+
+    static synchronized boolean claimNotice() {
+        if (noticeShownThisProcess) return false;
+        noticeShownThisProcess = true;
+        return true;
+    }
 
     static final class Result {
         final String status;
@@ -93,6 +100,8 @@ final class ArcaneUpdates {
                 "Invalid release version");
             String tag = latest.getString("release_tag");
             require(tag.equals("v" + version), "Release tag mismatch");
+            require(latest.getString("source_commit").matches("[a-f0-9]{40}"),
+                "Missing verified release source");
             require(PACKAGE.equals(latest.getString("package")), "Different Android package");
             require(newCode > 0 && newCode <= 2100000000L, "Invalid Android version code");
             require(installedCert.equalsIgnoreCase(latest.getString("certificate_sha256")),
@@ -118,7 +127,8 @@ final class ArcaneUpdates {
             JSONObject release = new JSONObject(readHttps(RELEASE_API + tag, RELEASE_LIMIT));
             require(tag.equals(release.getString("tag_name")), "GitHub release tag mismatch");
             require(!release.getBoolean("draft") && !release.getBoolean("prerelease") &&
-                !release.isNull("published_at"), "Release is not public stable");
+                !release.isNull("published_at") &&
+                !release.getString("published_at").isEmpty(), "Release is not public stable");
             require((RELEASE_BASE + tag).equals(release.getString("html_url")),
                 "Unexpected release destination");
             JSONArray assets = release.getJSONArray("assets");
