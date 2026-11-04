@@ -88,6 +88,10 @@ final class ArcaneSceneMarker {
                     // Schedule a flush without replacing or modifying the
                     // game's original save data or calling it on each frame.
                     if (frame == 1) patched.write(saveFlushTimer());
+                    // Flush again whenever a main timeline scene changes.
+                    // Arcane updates its savefile.data in several menu and
+                    // result frames without explicitly calling flush().
+                    patched.write(saveFlushOnce());
                     if (!markedFrame) {
                         patched.write(marker(COMMAND, isArenaFrame(frame) ? "arena" : "menu"));
                         patched.write(marker(FRAME_COMMAND, Integer.toString(frame)));
@@ -145,6 +149,34 @@ final class ArcaneSceneMarker {
         for (int i = 0; i < 4; i++) action.write((value >>> (8 * i)) & 255);
     }
 
+    private static byte[] saveFlushOnce() throws IOException {
+        // ActionScript: _root.savefile.flush();
+        ByteArrayOutputStream action = new ByteArrayOutputStream();
+        pushInt(action, 0); // no arguments
+        pushString(action, "_root");
+        action.write(0x1c); // GetVariable
+        pushString(action, "savefile");
+        action.write(0x4e); // GetMember
+        pushString(action, "flush");
+        action.write(0x52); // CallMethod
+        action.write(0x17); // Pop return value
+        action.write(0);    // End
+        return doActionTag(action.toByteArray());
+    }
+
+    private static byte[] doActionTag(byte[] code) throws IOException {
+        ByteArrayOutputStream tag = new ByteArrayOutputStream();
+        int header = (12 << 6) | Math.min(code.length, 63);
+        tag.write(header & 255);
+        tag.write((header >>> 8) & 255);
+        if (code.length >= 63) {
+            for (int i = 0; i < 4; i++)
+                tag.write((code.length >>> (8 * i)) & 255);
+        }
+        tag.write(code);
+        return tag.toByteArray();
+    }
+
     private static byte[] saveFlushTimer() throws IOException {
         // ActionScript 2:
         //   setInterval(_root.savefile, "flush", 5000);
@@ -163,19 +195,7 @@ final class ArcaneSceneMarker {
         action.write(0x3d); // CallFunction
         action.write(0x17); // Pop timer id
         action.write(0);    // End
-        byte[] code = action.toByteArray();
-        ByteArrayOutputStream tag = new ByteArrayOutputStream();
-        // Long SWF tag encoding is required for DoAction bodies >= 63 bytes.
-        int shortLen = Math.min(code.length, 63);
-        int header = (12 << 6) | shortLen;
-        tag.write(header & 255);
-        tag.write(header >>> 8);
-        if (code.length >= 63) {
-            for (int i = 0; i < 4; i++)
-                tag.write((code.length >>> (8 * i)) & 255);
-        }
-        tag.write(code);
-        return tag.toByteArray();
+        return doActionTag(action.toByteArray());
     }
 
     private static byte[] marker(byte[] command, String phase) throws IOException {
