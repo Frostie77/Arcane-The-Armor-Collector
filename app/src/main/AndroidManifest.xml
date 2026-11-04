@@ -2,6 +2,7 @@
     <application
         android:allowBackup="false"
         android:label="Arcane: The Armor Collector"
+        android:icon="@drawable/ic_arcane_launcher"
         android:usesCleartextTraffic="false"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:hardwareAccelerated="true">
