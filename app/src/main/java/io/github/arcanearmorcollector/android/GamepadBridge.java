@@ -273,6 +273,18 @@ final class GamepadBridge {
         updateMappedButtons();
     }
 
+    void tapTouchRelative() {
+        initializePointer();
+        if (!pointerInitialized || touchTrackpadAttacking || attacking) return;
+        // A short arena tap fires exactly at the existing relative crosshair.
+        // Never route this gesture through Direct touch coordinates: doing so
+        // makes the character face whichever part of the screen was tapped.
+        touchTrackpadAttacking = true;
+        updateMappedButtons();
+        touchTrackpadAttacking = false;
+        updateMappedButtons();
+    }
+
     void tapTouchDirect(float x, float y) {
         initializePointer();
         if (!pointerInitialized || attacking || touchTrackpadAttacking) return;
