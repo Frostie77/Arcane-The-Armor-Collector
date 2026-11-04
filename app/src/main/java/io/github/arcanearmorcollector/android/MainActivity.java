@@ -38,11 +38,12 @@ public class MainActivity extends Activity {
     private boolean backgrounded;
     private FrameLayout root;
     private FrameLayout optionsOverlay;
+    private TouchControlsOverlay touchControls;
     private ScrollView optionsScroll;
     private LinearLayout optionRows;
     private boolean renderedControls;
     private View floatingOptionsButton;
-    private boolean optionsOpen, showingControls;
+    private boolean optionsOpen, showingControls, showingTouchControls;
     private FrameLayout unmappedWarningLayer;
     private TextView warningKeepEditing, warningContinue;
     private int warningSelection;
@@ -51,6 +52,15 @@ public class MainActivity extends Activity {
     private String displayMode = "original";
     private boolean invertAimY;
     private int aimSpeedIndex = 1;
+    private int touchMode, touchSizeIndex = 1, touchOpacityIndex = 1, touchInsetIndex = 1;
+    private boolean touchSwapped;
+    private static final String[] TOUCH_MODES = {"Auto", "On", "Off"};
+    private static final String[] TOUCH_SIZES = {"Small", "Medium", "Large"};
+    private static final float[] TOUCH_SIZE_VALUES = {0.8f, 1.0f, 1.15f};
+    private static final String[] TOUCH_OPACITIES = {"Low", "Medium", "High"};
+    private static final float[] TOUCH_OPACITY_VALUES = {0.38f, 0.60f, 0.82f};
+    private static final String[] TOUCH_INSETS = {"Edge", "Normal", "Inset"};
+    private static final int[] TOUCH_INSET_VALUES = {8, 18, 34};
     private static final String[] DISPLAY_MODES = {"original", "stretch"};
     private static final String[] DISPLAY_NAMES = {"Original 4:3", "Stretch to Screen"};
     private static final float[] AIM_SPEEDS = {0.6f, 0.9f, 1.2f, 1.5f, 1.8f};
@@ -70,6 +80,11 @@ public class MainActivity extends Activity {
         invertAimY = prefs.getBoolean("invert_aim_y", false);
         aimSpeedIndex = prefs.getInt("aim_speed", 1);
         aimSpeedIndex = Math.max(0, Math.min(AIM_SPEEDS.length - 1, aimSpeedIndex));
+        touchMode = Math.max(0, Math.min(2, prefs.getInt("touch_mode", 0)));
+        touchSizeIndex = Math.max(0, Math.min(2, prefs.getInt("touch_size", 1)));
+        touchOpacityIndex = Math.max(0, Math.min(2, prefs.getInt("touch_opacity", 1)));
+        touchInsetIndex = Math.max(0, Math.min(2, prefs.getInt("touch_inset", 1)));
+        touchSwapped = prefs.getBoolean("touch_swap", false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setImmersive();
 
@@ -141,6 +156,12 @@ public class MainActivity extends Activity {
         gamepad.cursor.setClickable(false);
         gamepad.cursor.setFocusable(false);
         root.addView(gamepad.cursor, new FrameLayout.LayoutParams(-1, -1));
+        touchControls = new TouchControlsOverlay(this, gamepad);
+        root.addView(touchControls, new FrameLayout.LayoutParams(-1, -1));
+        touchControls.configure(TOUCH_SIZE_VALUES[touchSizeIndex],
+            TOUCH_OPACITY_VALUES[touchOpacityIndex], touchSwapped,
+            TOUCH_INSET_VALUES[touchInsetIndex]);
+        refreshTouchControls();
         // Render a genuine three-line icon instead of a font glyph, which
         // Android WebView / system fonts can draw off-centre.
         floatingOptionsButton = new MenuIconView();
@@ -228,6 +249,47 @@ public class MainActivity extends Activity {
         renderOptions();
     }
 
+    private boolean hasGamepad() {
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice device = InputDevice.getDevice(id);
+            if (device != null &&
+                (device.getSources() & (InputDevice.SOURCE_GAMEPAD |
+                    InputDevice.SOURCE_JOYSTICK)) != 0) return true;
+        }
+        return false;
+    }
+
+    private void refreshTouchControls() {
+        if (touchControls == null) return;
+        boolean visible = !optionsOpen && !backgrounded &&
+            (touchMode == 1 || (touchMode == 0 && !hasGamepad()));
+        int visibility = visible ? View.VISIBLE : View.GONE;
+        if (touchControls.getVisibility() != visibility)
+            touchControls.setVisibility(visibility);
+        if (visible) gamepad.showTouchCursor();
+    }
+
+    private void saveTouchPreferences() {
+        getPreferences(MODE_PRIVATE).edit()
+            .putInt("touch_mode", touchMode)
+            .putInt("touch_size", touchSizeIndex)
+            .putInt("touch_opacity", touchOpacityIndex)
+            .putInt("touch_inset", touchInsetIndex)
+            .putBoolean("touch_swap", touchSwapped).apply();
+        touchControls.configure(TOUCH_SIZE_VALUES[touchSizeIndex],
+            TOUCH_OPACITY_VALUES[touchOpacityIndex], touchSwapped,
+            TOUCH_INSET_VALUES[touchInsetIndex]);
+        refreshTouchControls();
+    }
+
+    private void resetTouchPreferences() {
+        touchMode = 0;
+        touchSizeIndex = touchOpacityIndex = touchInsetIndex = 1;
+        touchSwapped = false;
+        saveTouchPreferences();
+        renderOptions();
+    }
+
     private void setAimPreferences() {
         getPreferences(MODE_PRIVATE).edit()
             .putBoolean("invert_aim_y", invertAimY)
@@ -262,9 +324,12 @@ public class MainActivity extends Activity {
 
     private void openOptions() {
         if (optionsOpen) return;
+        if (touchControls != null) touchControls.releaseAll();
         gamepad.release();
         optionsOpen = true;
         showingControls = false;
+        showingTouchControls = false;
+        refreshTouchControls();
         menuSelection = 0;
         menuAxisLatch = 0;
         bindingAction = -1;
@@ -295,6 +360,7 @@ public class MainActivity extends Activity {
         optionsScroll = null;
         optionRows = null;
         floatingOptionsButton.setVisibility(View.VISIBLE);
+        refreshTouchControls();
         gameView.evaluateJavascript(
             "if(window.arcaneSetMenuPaused)window.arcaneSetMenuPaused(false);", null);
         gameView.requestFocus();
@@ -310,6 +376,9 @@ public class MainActivity extends Activity {
         } else if (showingControls) {
             leaveControls(false);
             return;
+        } else if (showingTouchControls) {
+            showingTouchControls = false;
+            menuSelection = 3;
         } else {
             closeOptions();
             return;
