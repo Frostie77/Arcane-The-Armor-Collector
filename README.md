@@ -126,3 +126,12 @@ The full original Arcane SWF was inspected. The old frame-20-as-arena assumption
 The original SWF gets `savefile = SharedObject.getLocal("Arcane8")` but its game code does not explicitly call `savefile.flush()`; its only `flush` string is from an unrelated MochiServices library. Ruffle's web backend uses browser localStorage for SharedObject data, and the previous user's log showed `localStorage=0` before and after restarting. This diagnostic build **adds in-memory AVM1 actions** to schedule `_root.savefile.flush()` every five seconds and on root scene frame transitions. It does not rewrite the save object or modify the original SWF on disk. **Unverified:** whether the Android WebView actually receives the expected storage writes and whether completed level progress persists after relaunch. Do not clear app data during tests.
 
 The virtual D-pad arrows are drawn as geometrically centred vectors rather than relying on Unicode font metrics. This version is for testing and must not be publicly released as final.
+
+
+### v0.2.0-rc7-debug: final-results Direct transition and combat HUD taps
+
+An on-device v0.2.0-rc6 test confirmed Relative mode activates when the game enters root frame 13. The results screen remains on that *same* root frame until Continue is chosen, so root-frame detection alone cannot revert to Direct promptly. The original SWF's main script contains the `onend` function, which attaches the `finalresults` clip. The in-memory SWF patch now inserts one host-only FSCommand at the beginning of that existing function. This should return to Direct on the **post-fight Continue/Retry screen**; selecting Retry should return to Relative upon re-entering an arena frame. Verify both branches on the device.
+
+While Relative combat mode is active, **quick taps** send direct mouse clicks to the game so potion icons, the game's own options menu and stats menu are accessible regardless of their positions. **Swiping or holding at least 170 ms** uses relative crosshair movement and holds attack. This avoids guesswork about invisible button hit zones and leaves the virtual movement pad and other mapped actions independent for multi-touch. Verify that firing still feels responsive; 170 ms may need tuning.
+
+**Saving:** on-device logcat confirmed the original `Arcane8` browser-storage object exists and changed from 156 to 496 characters, and the user subsequently confirmed **save progress survives a reset**. Keep the in-memory save flushing logic in place, and do not delete app data when updating.
