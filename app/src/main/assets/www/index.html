@@ -207,31 +207,119 @@ window.arcaneControllerAim = (nx, ny) => {
     }));
   }
 };
-// Release-only recovery for movement after WebView focus or touch changes.
-// Synthetic key-downs on A/S/D were making the character step or turn in
-// the opposite direction after a movement gesture ended. Never press a
-// movement key during recovery, including after a scene transition.
-window.arcaneClearMovementKeys = () => {
-  if (!arcanePlayer || arcaneInBackground) return;
-  try {
-    arcanePlayer.focus();
-    const send = (type, key, code, keyCode) => {
-      arcanePlayer.dispatchEvent(new KeyboardEvent(type, {
-        key, code, keyCode, which: keyCode,
-        bubbles: true, composed: true, cancelable: true,
-        repeat: false
-      }));
-    };
-    for (const [key, code, keyCode] of [
-      ['w', 'KeyW', 87], ['a', 'KeyA', 65],
-      ['s', 'KeyS', 83], ['d', 'KeyD', 68]
-    ]) {
-      send('keyup', key, code, keyCode);
-    }
-    console.info('ArcaneMovementRecovery: WASD release-only');
-  } catch (error) {
-    console.warn('ArcaneMovementRecovery: failed', error);
+// A single keyboard owner for all movement directions. Android sends
+// a four-bit desired mask (W=1 S=2 A=4 D=8) rather than individual WebView
+// KeyEvents. Programmatic keyboard events go to Ruffle's focused PLAYER.
+// Native WebView key-ups were logged but frequently not reaching Flash.
+const arcaneMoveKeys = [
+  {bit: 1, key: 'w', code: 'KeyW', keyCode: 87},
+  {bit: 2, key: 's', code: 'KeyS', keyCode: 83},
+  {bit: 4, key: 'a', code: 'KeyA', keyCode: 65},
+  {bit: 8, key: 'd', code: 'KeyD', keyCode: 68}
+];
+let arcaneMovementMask = 0;
+
+function arcaneMoveKey(spec, down) {
+  if (!arcanePlayer) return;
+  arcanePlayer.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', {
+    key: spec.key, code: spec.code, keyCode: spec.keyCode,
+    which: spec.keyCode, bubbles: true, composed: true,
+    cancelable: true, repeat: false
+  }));
+}
+
+window.arcaneSetMovementMask = mask => {
+  mask = (Number(mask) | 0) & 15;
+  const old = arcaneMovementMask;
+  arcaneMovementMask = mask;
+  if (!arcanePlayer) return;
+  // Ruffle rejects keyboard events when the player has lost DOM focus.
+  // Do not create artificial mouse clicks just to regain that focus.
+  if (document.activeElement !== arcanePlayer) arcanePlayer.focus();
+  for (const spec of arcaneMoveKeys) {
+    if ((old & spec.bit) && !(mask & spec.bit)) arcaneMoveKey(spec, false);
   }
+  for (const spec of arcaneMoveKeys) {
+    if (!(old & spec.bit) && (mask & spec.bit)) arcaneMoveKey(spec, true);
+  }
+  if (mask === 0) {
+    // The fallback also covers a keydown that was missed by our local mask.
+    for (const spec of arcaneMoveKeys) arcaneMoveKey(spec, false);
+  }
+  console.info('ArcaneMovementState old=' + old + ' new=' + mask +
+    ' active=' + (document.activeElement === arcanePlayer));
+};
+
+// Ruffle can lose a key-up during a touch focus change. Assert the current
+// neutral state to the Ruffle player, rather than blindly creating more
+// native KeyEvents; never synthesize a movement key-down in this heartbeat.
+setInterval(() => {
+  if (!arcanePlayer || arcaneInBackground || arcaneMenuPaused) return;
+  if (document.activeElement !== arcanePlayer) arcanePlayer.focus();
+  for (const spec of arcaneMoveKeys) {
+    if (!(arcaneMovementMask & spec.bit)) arcaneMoveKey(spec, false);
+  }
+}, 220);
+
+window.arcaneClearMovementKeys = () => window.arcaneSetMovementMask(0);
+
+// Native overlay HUD touches are translated to DOM mouse-pointer events on
+// Ruffle's actual canvas. Android-synthesized WebView touches reached
+// pointerdown but did not activate Flash HUD movieclips on the Odin.
+window.arcaneHudPointer = (kind, nx, ny) => {
+  if (!arcanePlayer || arcaneInBackground || arcaneMenuPaused) return;
+  const shadow = arcanePlayer.shadowRoot;
+  const canvas = shadow ? Array.from(shadow.querySelectorAll('canvas'))
+    .filter(el => el.getBoundingClientRect().width > 0 &&
+                  el.getBoundingClientRect().height > 0)
+    .sort((a, b) => {
+      const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+      return br.width * br.height - ar.width * ar.height;
+    })[0] : null;
+  if (!canvas) {
+    console.warn('ArcaneHUDCanvas missing');
+    return;
+  }
+  const r = canvas.getBoundingClientRect();
+  const x = Math.max(r.left + 1, Math.min(r.right - 1,
+    Math.max(0, Math.min(1, Number(nx))) * window.innerWidth));
+  const y = Math.max(r.top + 1, Math.min(r.bottom - 1,
+    Math.max(0, Math.min(1, Number(ny))) * window.innerHeight));
+  const localX = (x - r.left) * canvas.offsetWidth / Math.max(1, r.width);
+  const localY = (y - r.top) * canvas.offsetHeight / Math.max(1, r.height);
+  function deliver(type, buttons) {
+    if (typeof PointerEvent !== 'function') return;
+    const e = new PointerEvent(type, {
+      bubbles: true, composed: true, cancelable: true,
+      pointerType: 'mouse', pointerId: 10, isPrimary: true,
+      clientX: x, clientY: y, screenX: x, screenY: y,
+      button: type === 'pointermove' ? -1 : 0, buttons,
+      pressure: buttons ? 0.5 : 0
+    });
+    // Ruffle uses canvas-local event offsets for its SWF coordinate map,
+    // including when the stage is stretched on the Odin's display.
+    try {
+      Object.defineProperties(e, {
+        offsetX: {configurable: true, value: localX},
+        offsetY: {configurable: true, value: localY}
+      });
+    } catch (error) {
+      console.warn('ArcaneHUDCanvas offset error ' + String(error));
+    }
+    canvas.dispatchEvent(e);
+  }
+  if (kind === 'down') {
+    arcanePlayer.focus();
+    deliver('pointermove', 0);
+    deliver('pointerdown', 1);
+  } else if (kind === 'move') {
+    deliver('pointermove', 1);
+  } else if (kind === 'up') {
+    deliver('pointerup', 0);
+  }
+  console.info('ArcaneHUDCanvas ' + kind + ' at (' +
+    localX.toFixed(1) + ',' + localY.toFixed(1) +
+    ') focus=' + (document.activeElement === arcanePlayer));
 };
 // Pause Flash execution and sound while the options overlay is visible
 // OR Android backgrounds the activity. Either reason independently keeps
