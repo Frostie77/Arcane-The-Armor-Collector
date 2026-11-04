@@ -15,11 +15,20 @@ An unofficial Android wrapper for the original Flash game, built with Ruffle and
 - Persistent settings and Arcane8 Flash save data.
 - Native speaker check (Left / Right / Both) for troubleshooting.
 - **Updates** heading in FrostFrontend: installed/latest version, manual check, automatic checks on launch, and a verified GitHub release page link. Notices appear when in menus, not combat.
-- Original, game-free shield launcher icon.
+- Custom launcher icon created for the Android port.
 
 ## First launch: import your own game file
 
 **This APK does not contain the original game.** Copy your legally obtained Arcane: The Armor Collector Flash `.swf` file onto your Android device. Start the APK, select **Select Game File**, and choose the file using Android's document picker. The app copies it into its private storage. You only need to import it once.
+
+### Where to get Arcane.swf
+
+The original game was uploaded by Hadar1989 to Newgrounds. Obtain it directly from the original game's host rather than from this repository:
+
+- **[Download original Arcane SWF (Newgrounds)](https://uploads.ungrounded.net/442000/442706_Arcane.swf)**
+- [Original Arcane game page and author credits](https://www.newgrounds.com/portal/view/442706)
+
+Save the linked `.swf` file to your device's **Downloads** folder and select it from the app's first-run file picker. If the browser opens the file instead of saving it, use **Save link as...**. No renaming is required; the import supports the original `442706_Arcane.swf` filename. Game content remains owned by its respective rights holders.
 
 No all-files storage permission is requested. The original Flash game runs offline; the updater uses internet access only for optional HTTPS update metadata and a browser-based release link.
 
