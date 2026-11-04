@@ -28,7 +28,7 @@ $iconRef = $iconMatch.Groups[1].Value
 $iconType = $iconMatch.Groups[2].Value
 $iconName = $iconMatch.Groups[3].Value
 $iconFiles = @(Get-ChildItem -Path $resFolder -Recurse -File | Where-Object {
-    $_.Directory.Name -match "^$iconType($|-)" -and $_.BaseName -eq $iconName
+    $_.Directory.Name -match ('^' + [regex]::Escape($iconType) + '(-|$)') -and $_.BaseName -eq $iconName
 })
 if ($iconFiles.Count -eq 0) { throw "Your custom icon resource $iconRef is missing." }
 Write-Host "Using original custom launcher icon: $iconRef"
