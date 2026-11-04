@@ -2,24 +2,39 @@
 
 A **small, unofficial personal-use Android wrapper** for a classic Flash (SWF) game, built with Ruffle and an Android WebView. This project is NOT affiliated with the game's original creators or Ruffle.
 
-**Status:** v0.2.0-rc4 candidate. Native Android WebView/Ruffle gameplay, the Odin 2 Portal controller, FrostFrontend pause/options, aspect modes, remapping, unmapped warnings and persistent mappings have been tested on-device. **Touch controls are newly implemented and must pass on-device testing before a final release.**
+**Status:** v0.2.0 game-free public APK candidate. Odin gamepad, touchscreen movement/aim/HUD selections, Arcane8 saves and current FrostFrontend header/layout have been tested in private Debug builds. The new first-run SWF import flow and separately signed public build still require device verification before publishing.
 
-## Goal
+## Public APK: supply your own game file
 
-- Offline 4:3 Flash rendering inside a landscape, immersive Android app
-- Tested AYN Odin 2 Portal controller mapping and remapping
-- FrostFrontend pause/options, Original 4:3 and Stretch display modes
-- Virtual touchscreen movement/aim joysticks and action buttons for Android touch devices
-- Remaining validation: touch multi-input, first-run import flow, saving, extended stability and release packaging
+The public APK **does not contain Arcane's original Flash game or copyrighted artwork**. It includes the Android wrapper and licensed Ruffle runtime. On first launch:
 
-## Build on Windows with Android Studio
+1. Tap **Select Game File** (or press A on a controller).
+2. Choose your own legally obtained Arcane: The Armor Collector `.swf` file from Android's document picker.
+3. Wait for the file to be copied into the app's private storage. The game then starts normally, and the copy remains available on future launches.
 
-1. Copy your own `arcane-the-armor-collector.swf` into `app/src/main/assets/www/arcane.swf` (the user-only handover ZIP may already contain it).
-2. Open PowerShell inside this folder and run `powershell -ExecutionPolicy Bypass -File .\prepare.ps1`. It downloads **official Ruffle 0.7.1**, prepares Android SDK configuration, and creates Gradle's official wrapper (approximately 130 MB initial Gradle download).
-3. Open this project folder with Android Studio, wait for Gradle sync, then **Build > Build APK(s)**.
-4. Install `app/build/outputs/apk/debug/app-debug.apk` with ADB. Test boot, sound, menus, game, and saves.
+No internet connection or all-files storage permission is required to import or play. Cancelling the picker leaves the import screen visible. An invalid or oversized file is rejected without replacing any previously imported game. The app keeps its WebView/Flash save data separately from the user-selected game file.
 
-**Internet is required to prepare/build on Windows, but not to play once packaged.** The Android manifest has no `INTERNET` permission and the built app uses only packaged assets.
+**Existing private Debug installs:** Do not uninstall or clear app data to try a public release build; that would erase progress. A normally signed release APK cannot update a Debug-signed installation with the same package ID. Use the isolated import test below first; it has a separate application ID and leaves Debug data untouched.
+
+## Build on Windows
+
+1. Clone the source and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\prepare.ps1` to prepare Ruffle/Gradle. The original SWF is **not required** to build a public wrapper.
+2. To build and install a safe, separate game-free import test on a connected Odin, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\test-public-import.ps1`. If your private original game SWF exists at `app/src/main/assets/www/arcane.swf`, the script temporarily removes it from the APK build and optionally copies it to the Odin's Downloads folder for selection. Your main Debug installation and save data remain intact.
+3. Once first-run import, game controls and saves are verified on this isolated test, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-public-release.ps1` to produce a **signed and verified** game-free APK in the local `release` folder. It uses a locally created Android release keystore, prompts for the signing password and reports the SHA-256 hash. **Back up your release keystore securely**; losing it can prevent installing future updates over an existing release.
+
+Both scripts refuse APKs that contain `arcane.swf` and restore any temporarily moved personal game file. Ruffle runtime assets are downloaded by `prepare.ps1`, not committed to this source repository.
+
+## Release readiness
+
+- [x] Confirm gamepad controls, touchscreen movement/aim and touch HUD selection on the Odin 2 Portal.
+- [x] Confirm Arcane8 saves survive restarts and FrostFrontend header sizing is readable.
+- [x] Implement first-run document picker, private SWF storage and game-free package verification.
+- [ ] Device-test the isolated SWF import flow, cancellation/retry, gameplay and progress persistence.
+- [ ] Produce and verify the signed, game-free v0.2.0 APK with the permanent release keystore.
+- [ ] Publish source and APK with appropriate Ruffle notices; keep original SWF/art assets out of public downloads.
+
+**Known issue:** Rare intermittent one-sided/distorted sound was observed on the Odin. Switching Android Mono Audio on and back off temporarily corrected it, but it was not reproducible during later testing. FrostFrontend's native Left/Right/Both speaker check is available for further diagnosis; no unverified Ruffle audio processing changes are included.
+
 
 ## Game controls
 
@@ -27,11 +42,11 @@ Original keyboard/mouse: WASD movement; mouse aim and left-click attack; Space s
 
 The tested Odin bridge maps left stick / D-pad to WASD, right stick to aim, R1/R2 to attack, A to switch weapon, X to throw, B to armour, Y/L1 to throwable cycling. These buttons can be remapped in FrostFrontend, with unmapped controls shown explicitly. Start opens FrostFrontend.
 
-Touch devices use virtual MOVE and AIM sticks plus FIRE, ALT, WEAPON, ARMOUR, THROW, PREV and NEXT buttons. The virtual buttons activate game actions regardless of physical controller remapping. Touch and controller inputs remain independent. This virtual layout has not yet been verified on-device.
+Touch devices use a configurable joystick or digital D-pad for movement, and Relative/Direct aiming. Relative combat aim uses drag-to-aim and hold-to-attack; the game's potion/stats/options HUD buttons remain independently tappable. Five on-screen secondary-action buttons work separately from physical controller remapping. The current touch behaviour has been tested on the Odin 2 Portal.
 
 ## Publishing to GitHub
 
-The recommended repository is `Arcane-Armor-Collector-Android`. `arcane.swf` is deliberately ignored by Git, as are the downloaded Ruffle assets. **Do not publish the original SWF, game art, or a redistributable APK with the game included without permission from the original rightsholders.** Keep public GitHub limited to wrapper source and setup instructions.
+The source repository and public APK must exclude the original `arcane.swf` and unlicensed original game art. The release scripts verify this exclusion. A **game-free** APK may be shared alongside the source, provided the third-party Ruffle license/notice obligations are respected and the release makes clear that users must supply their own SWF. The repository is currently private until the owner elects to make it public.
 
 Ruffle: https://ruffle.rs (MIT/Apache-2.0; preserve upstream notices if you redistribute its runtime).
 Android WebViewAssetLoader: https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader
@@ -44,13 +59,11 @@ The custom Android icon is supplied as a separate local asset pack; it is not in
 
 ## Known limitations
 
-- Ruffle desktop compatibility doesn't guarantee WebView compatibility.
-- Input mapping is provisional; Android gamepad testing is essential.
-- Flash network calls are disabled; old MochiAds/highscores may not work.
-- Save files use WebView local storage and may require additional changes.
-- Touchscreen controls are present in v0.2.0-rc4 but still require live testing.
-- Launcher icon artwork is installed locally for the developer's build; the source repository does not contain original game artwork.
-
+- Browser/WebView Ruffle compatibility may vary between Android devices.
+- Release-candidate audio routing can occasionally be one-sided; see the note above.
+- A game-free public APK requires a user-supplied `.swf` file on first launch.
+- The locally installed personal Debug launcher artwork is not present in this source-only repository. Use only original or licensed icon art in the public APK.
+- Do not clear Android app storage or uninstall your existing Debug app without first securing your saves.
 
 ## Display and controller options (experimental)
 
