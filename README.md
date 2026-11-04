@@ -54,7 +54,7 @@ The custom Android icon is supplied as a separate local asset pack; it is not in
 
 ## Display and controller options (experimental)
 
-A native pause/options overlay is available from the Odin's **Start** button or the small floating menu icon near the top-right of the screen. Opening the overlay calls Ruffle's suspend operation, pausing gameplay and audio; closing it resumes the game. Controller navigation uses D-pad/left stick to move, A to select, B to go back, and Start to resume. The same options can be tapped on screen.
+**FrostFrontend** is a larger, centered pause/options overlay accessed using the Odin's **Start** button or the floating three-line icon. Opening it pauses gameplay and audio. It has persistent **Graphics**, **Controls** and **Touch Settings** tabs, plus a boxed **X** in the top-right corner instead of a Resume Game row. Controls contains **Button Mapping** and **Movement Settings**. Use L1/R1 to change tabs, D-pad/left stick to navigate, A to select, B to go back, and Start or X to close. Touch selection also works. Exiting Button Mapping with unmapped actions still opens the warning before leaving.
 
 Display settings persist through Android SharedPreferences:
 
@@ -91,3 +91,10 @@ For the **AYN Odin 2 Portal**, choose Touch Controls: **On** to test the overlay
 - [ ] Test touch-control layout modes and visibility on phone/handheld.
 - [ ] Test audio pause/background/return and long-session stability.
 - [ ] Confirm final version and publish a source-only GitHub Release. The SWF and other unlicensed game assets must not be published with a public APK.
+
+
+### Current release-candidate test priorities
+
+The tabbed FrostFrontend layout and expanded window were added after v0.2.0-rc1 was first tested. The touch-control aim stick and separate Fire/Alt buttons were removed: tap or drag on the Flash game area to aim and attack; the movement stick and five secondary-action buttons remain. Adjustable 4-way/8-way movement, stick deadzone and axis inversion are available under **Controls → Movement Settings**. These changes still require on-device testing.
+
+**Known issue being investigated:** Arcane did not retain some completed-level progress in user testing. Do not assume saving works until we determine whether the Flash game writes save data and whether Ruffle/WebView restores it across launches. Avoid wiping app data during testing.
