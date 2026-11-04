@@ -159,7 +159,7 @@ $feed = [ordered]@{
     }
 }
 $feedFile = Join-Path $releaseDir 'android-stable.json'
-$feed | ConvertTo-Json -Depth 5 | Set-Content -Path $feedFile -Encoding UTF8
+[System.IO.File]::WriteAllText($feedFile, ($feed | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
 Write-Host 'PASS: SIGNED AND GAME-FREE PUBLIC APK'
 Write-Host "APK: $signed"
 Write-Host "SHA256: $hash"
