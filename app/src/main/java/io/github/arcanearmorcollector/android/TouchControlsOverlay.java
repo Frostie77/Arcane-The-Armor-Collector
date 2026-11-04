@@ -323,12 +323,28 @@ final class TouchControlsOverlay extends FrameLayout {
             paint.setColor(border);
             canvas.drawRoundRect(x - half, y - half, x + half, y + half,
                 dp(9), dp(9), paint);
-            paint.setStyle(Paint.Style.FILL);
+            // Draw the arrow geometrically instead of using Unicode glyphs.
+            // Android font fallback was offsetting the arrows inside their
+            // squares even though the text baseline was mathematically centered.
+            float radius = size * 0.235f;
+            float tail = radius * 0.70f;
+            float tip = radius;
+            float wing = radius * 0.55f;
+            canvas.save();
+            canvas.translate(x, y);
+            if ("↓".equals(arrow)) canvas.rotate(180f);
+            else if ("←".equals(arrow)) canvas.rotate(-90f);
+            else if ("→".equals(arrow)) canvas.rotate(90f);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(dp(2f), size * 0.065f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
             paint.setColor(gold);
-            paint.setTextAlign(Paint.Align.CENTER);
-            paint.setTextSize(dp(19));
-            canvas.drawText(arrow, x,
-                y - (paint.ascent() + paint.descent()) * 0.5f, paint);
+            // Local coordinates point upward for every direction.
+            canvas.drawLine(0f, tail, 0f, -tip, paint);
+            canvas.drawLine(-wing, -tip + wing, 0f, -tip, paint);
+            canvas.drawLine(0f, -tip, wing, -tip + wing, paint);
+            canvas.restore();
         }
 
         @Override protected void onDraw(Canvas canvas) {
