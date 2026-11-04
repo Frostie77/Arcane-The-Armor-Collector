@@ -10,8 +10,8 @@ import android.widget.FrameLayout;
 
 /**
  * FrostFrontend touchscreen controls. User-selectable joystick or digital
- * D-pad movement plus relative trackpad aim/attack, or direct game-screen taps.
- * Multi-touch splits input between movement and action surfaces.
+ * D-pad movement plus full-screen invisible relative trackpad aim/attack,
+ * or direct game-screen taps. Multi-touch splits movement and actions.
  */
 final class TouchControlsOverlay extends FrameLayout {
     private final GamepadBridge bridge;
@@ -107,12 +107,11 @@ final class TouchControlsOverlay extends FrameLayout {
         int actionSide = swapped ? 0 : 1;
         int diameter = sz(134);
         if (relativeAim) {
-            // The touch zone only covers the lower portion of the right side;
-            // the rest of the game retains normal direct taps (e.g., menus).
+            // Invisible full-screen touch target UNDER the movement and action
+            // controls. Relative aim must work consistently everywhere:
+            // no outside-the-box fallback to direct mouse aiming.
             aimSurface = new AimSurface(getContext());
-            int width = Math.round(getResources().getDisplayMetrics().widthPixels * 0.46f);
-            int height = Math.round(getResources().getDisplayMetrics().heightPixels * 0.74f);
-            position(aimSurface, width, height, actionSide, dp(8));
+            addView(aimSurface, new FrameLayout.LayoutParams(-1, -1));
         } else {
             aimSurface = null;
         }
@@ -137,7 +136,6 @@ final class TouchControlsOverlay extends FrameLayout {
     }
 
     private final class AimSurface extends View {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private int activePointer = -1;
         private float lastX, lastY;
 
@@ -186,21 +184,8 @@ final class TouchControlsOverlay extends FrameLayout {
             }
         }
 
-        @Override protected void onDraw(Canvas canvas) {
-            // Only a discreet guide; keep the game visible underneath.
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(dp(1.4f));
-            paint.setColor(0x66D8B985);
-            float inset = dp(5);
-            canvas.drawRoundRect(inset, inset, getWidth()-inset,
-                getHeight()-inset, dp(16), dp(16), paint);
-            paint.setStyle(Paint.Style.FILL);
-            paint.setTextAlign(Paint.Align.CENTER);
-            paint.setColor(gold);
-            paint.setTextSize(dp(11));
-            canvas.drawText("SWIPE TO AIM · TOUCH TO FIRE",
-                getWidth()/2f, dp(24), paint);
-        }
+        // No onDraw: relative aiming has no visible zone or border.
+        // Moving and firing works in the entire unobstructed game view.
     }
 
     private final class DirectionPad extends View {
