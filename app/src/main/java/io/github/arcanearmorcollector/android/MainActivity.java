@@ -51,6 +51,8 @@ public class MainActivity extends Activity {
     private String updateStatusText = "Not checked yet.";
     private String updateLatestText = "Not checked";
     private String updateReleaseUrl;
+    private static final long UPDATE_SUCCESS_CACHE_MS = 6L * 60 * 60 * 1000;
+    private static final long UPDATE_ERROR_RETRY_MS = 15L * 60 * 1000;
     private FrameLayout importOverlay;
     private TextView importStatus;
     private Button importButton;
@@ -585,10 +587,32 @@ public class MainActivity extends Activity {
         if (updatesAutomatic) startUpdateCheck(false);
     }
 
+    private boolean restoreCachedUpdate() {
+        if (!ArcaneUpdates.isSignedRelease(this)) return false;
+        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        long checked = prefs.getLong("updates_checked_at", 0);
+        long age = System.currentTimeMillis() - checked;
+        long ttl = prefs.getBoolean("updates_cached_verified", false) ?
+            UPDATE_SUCCESS_CACHE_MS : UPDATE_ERROR_RETRY_MS;
+        if (checked <= 0 || age < 0 || age >= ttl) return false;
+        updateStatusText = prefs.getString("updates_cached_status", "Not checked yet.") +
+            " (checked recently)";
+        updateLatestText = prefs.getString("updates_cached_latest", "Not checked");
+        updateReleaseUrl = prefs.getBoolean("updates_cached_verified", false) ?
+            prefs.getString("updates_cached_url", null) : null;
+        updateAvailable = prefs.getBoolean("updates_cached_verified", false) &&
+            prefs.getBoolean("updates_cached_available", false);
+        maybeShowUpdateNotice();
+        return true;
+    }
+
     private void startUpdateCheck(boolean manual) {
         if (updateChecking) return;
         if (!manual && (!updatesAutomatic || updateCheckedThisLaunch)) return;
-        if (!manual) updateCheckedThisLaunch = true;
+        if (!manual) {
+            updateCheckedThisLaunch = true;
+            if (restoreCachedUpdate()) return;
+        }
         updateChecking = true;
         updateStatusText = "Checking for published Android updates...";
         if (optionsOpen && optionsTab == 3) renderOptions();
@@ -601,6 +625,16 @@ public class MainActivity extends Activity {
                 updateLatestText = result.latest;
                 updateReleaseUrl = result.releaseUrl;
                 updateAvailable = result.available;
+                if (ArcaneUpdates.isSignedRelease(this)) {
+                    getPreferences(MODE_PRIVATE).edit()
+                        .putLong("updates_checked_at", System.currentTimeMillis())
+                        .putBoolean("updates_cached_verified", result.verified)
+                        .putString("updates_cached_status", result.status)
+                        .putString("updates_cached_latest", result.latest)
+                        .putString("updates_cached_url", result.releaseUrl)
+                        .putBoolean("updates_cached_available", result.available)
+                        .apply();
+                }
                 if (optionsOpen && optionsTab == 3) {
                     menuSelection = Math.max(0, Math.min(menuSelection,
                         updateReleaseUrl == null ? 1 : 2));
