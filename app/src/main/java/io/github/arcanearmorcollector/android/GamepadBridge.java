@@ -493,7 +493,9 @@ final class GamepadBridge {
     }
 
     void releaseTouchControls() {
-        hudTouchActive = false;
+        // A scene or options transition must end any open browser-side
+        // HUD mouse press, or Ruffle can retain its mouse-down state.
+        if (hudTouchActive) endTouchHud();
         touchUp = touchDown = touchLeft = touchRight = false;
         touchDpadUp = touchDpadDown = touchDpadLeft = touchDpadRight = false;
         touchTrackpadAttacking = false;
@@ -676,6 +678,7 @@ final class GamepadBridge {
     };
 
     void release() {
+        if (hudTouchActive) endTouchHud();
         lastMovementMask = 0;
         sendMovementMask(0);
         aimX = aimY = 0;
