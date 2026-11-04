@@ -1,5 +1,5 @@
-# Arcane v0.2.0 public release: signed APK without the original Flash game.
-# Never uninstalls or modifies the currently installed Debug app or its saves.
+# Arcane v0.2.1 signed release candidate, not installed or published.
+# Existing Arcane installations, signing keys, and saves remain untouched.
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
@@ -14,8 +14,8 @@ $manifest = Join-Path $PSScriptRoot 'app\src\main\AndroidManifest.xml'
 $manifestBackup = Join-Path $HOME 'Downloads\Arcane-Manifest-Backup.xml'
 $unsigned = Join-Path $PSScriptRoot 'app\build\outputs\apk\release\app-release-unsigned.apk'
 $releaseDir = Join-Path $PSScriptRoot 'release'
-$aligned = Join-Path $releaseDir 'Arcane-v0.2.0-aligned.apk'
-$signed = Join-Path $releaseDir 'Arcane-v0.2.0-Android.apk'
+$aligned = Join-Path $releaseDir 'Arcane-v0.2.1-aligned.apk'
+$signed = Join-Path $releaseDir 'Arcane-v0.2.1-Android.apk'
 $keystore = Join-Path $HOME '.android\Arcane-Release.keystore'
 $keytool = Join-Path $env:JAVA_HOME 'bin\keytool.exe'
 $buildToolsDir = Join-Path $env:LOCALAPPDATA 'Android\Sdk\build-tools'
@@ -26,7 +26,28 @@ $tools = Get-ChildItem $buildToolsDir -Directory |
 if (-not (Test-Path $gradle)) { throw 'Gradle bootstrap missing. Run prepare.ps1 first.' }
 if (-not (Test-Path $ruffle)) { throw 'Ruffle runtime missing. Run prepare.ps1 first.' }
 if (-not $tools) { throw 'Android zipalign/apksigner not found in SDK build-tools.' }
-if (-not (Test-Path $keytool)) { throw 'JDK keytool missing.' }
+if (-not (Test-Path $keystore)) { throw 'Permanent Arcane release signing key missing. Refusing to generate a new key.' }
+$stableFeed = Join-Path $PSScriptRoot 'updates\android-stable.json'
+if (-not (Test-Path $stableFeed)) { throw 'Published stable update feed missing.' }
+$published = Get-Content -Raw -LiteralPath $stableFeed | ConvertFrom-Json
+if ($published.channel -ne 'stable' -or
+    $published.package -ne 'io.github.arcanearmorcollector.android' -or
+    $published.latest.version_name -ne '0.2.0' -or
+    $published.latest.version_code -ne 16 -or
+    $published.latest.certificate_sha256 -notmatch '^[a-fA-F0-9]{64}$') {
+    throw 'Published v0.2.0 identity cannot be verified. Do not sign.'
+}
+$expectedSigner = $published.latest.certificate_sha256.ToLowerInvariant()
+$gradleSource = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'app\build.gradle')
+if ($gradleSource -notmatch 'versionCode\s+17' -or
+    $gradleSource -notmatch "versionName\s+'0\.2\.1'") {
+    throw 'App version must be 0.2.1 / code 17.'
+}
+if (-not (Test-Path (Join-Path $PSScriptRoot 'third_party\FrostFrontend\frostfrontend\build.gradle'))) {
+    throw 'Shared FrostFrontend submodule missing.'
+}
+$aapt = Join-Path $tools.FullName 'aapt.exe'
+if (-not (Test-Path $aapt)) { throw 'APK icon verification tool aapt.exe missing.' }
 if (Test-Path $held) { throw "Previous private backup exists: $held. Restore it before continuing." }
 if (-not (Test-Path $manifestBackup)) {
     throw "Custom icon manifest backup missing: $manifestBackup. The public build is stopped to avoid replacing your launcher icon."
@@ -36,7 +57,10 @@ if (-not (Test-Path $manifestBackup)) {
 $previousManifest = [System.IO.File]::ReadAllText($manifestBackup)
 $iconMatch = [regex]::Match($previousManifest, 'android:icon\s*=\s*"(@(mipmap|drawable)/([A-Za-z0-9_]+))"')
 if (-not $iconMatch.Success) {
-    throw "No Android launcher icon found in backup: $manifestBackup"
+    throw "No custom icon reference found in backup: $manifestBackup"
+}
+if ($iconMatch.Groups[3].Value -eq 'ic_arcane_launcher') {
+    throw 'Icon backup refers to the removed placeholder shield.'
 }
 $iconRef = $iconMatch.Groups[1].Value
 $iconType = $iconMatch.Groups[2].Value
@@ -84,11 +108,14 @@ try {
     # The original repository manifest is restored byte-for-byte even if build fails.
     $manifestBytes = [System.IO.File]::ReadAllBytes($manifest)
     $currentManifest = [System.Text.Encoding]::UTF8.GetString($manifestBytes)
-    if ($currentManifest -notmatch 'android:icon="[^"]+"') {
-        throw 'Expected launcher icon attribute not found in AndroidManifest.xml'
+    if ($currentManifest -match 'android:icon=') {
+        throw 'Source manifest must not contain any placeholder icon.'
     }
-    $withCustomIcon = [regex]::Replace($currentManifest,
-        'android:icon="[^"]+"', ('android:icon="' + $iconRef + '"'))
+    if ($currentManifest -notmatch '(?m)^    <application\s*$') {
+        throw 'Android application tag missing.'
+    }
+    $withCustomIcon = $currentManifest.Replace('    <application',
+        '    <application' + [Environment]::NewLine + '        android:icon="' + $iconRef + '"')
     $manifestReplaced = $true
     [System.IO.File]::WriteAllText($manifest, $withCustomIcon, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -107,12 +134,6 @@ try {
     }
 }
 
-if (-not (Test-Path $keystore)) {
-    New-Item -ItemType Directory -Path (Split-Path $keystore) -Force | Out-Null
-    Write-Host 'Create your permanent Android release signing key. Remember its password.'
-    & $keytool -genkeypair -keystore $keystore -alias arcane-release -keyalg RSA -keysize 3072 -validity 10000 -storetype PKCS12 -dname 'CN=Arcane Android Release'
-    if ($LASTEXITCODE -ne 0) { throw 'Release signing key creation failed.' }
-}
 if (Test-Path $aligned) { Remove-Item $aligned -Force }
 if (Test-Path $signed) { Remove-Item $signed -Force }
 
@@ -129,10 +150,22 @@ if (-not $signerMatch.Success) {
     throw 'Could not verify the permanent release signing certificate fingerprint.'
 }
 $certSha256 = $signerMatch.Groups[1].Value.ToLowerInvariant()
+if ($certSha256 -ne $expectedSigner) {
+    Remove-Item -LiteralPath $signed -Force
+    throw 'CRITICAL: Signing certificate differs from the published v0.2.0. Candidate deleted.'
+}
 Confirm-GameFree $signed
+$badging = @(& $aapt dump badging $signed)
+if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the compiled launcher icon.' }
+$iconBadging = ($badging | Where-Object { $_ -match '^application(?:-icon.*)?: ' }) -join [Environment]::NewLine
+$expectedIconName = [regex]::Escape($iconName)
+if ($iconBadging -notmatch "(?i)$expectedIconName\.(?:png|webp|xml)") {
+    throw "Signed APK does not contain the correct custom icon: $iconRef"
+}
+Write-Host "PASS: custom launcher icon verified in signed APK: $iconRef"
 Remove-Item $aligned -Force
 $hash = (Get-FileHash -Algorithm SHA256 $signed).Hash.ToLowerInvariant()
-Set-Content -Path (Join-Path $releaseDir 'Arcane-v0.2.0-Android.sha256.txt') -Value "$hash  Arcane-v0.2.0-Android.apk"
+Set-Content -Path (Join-Path $releaseDir 'Arcane-v0.2.1-Android.sha256.txt') -Value "$hash  Arcane-v0.2.1-Android.apk"
 
 # Stage a signed-APK-specific update feed for publication AFTER the actual
 # matching GitHub Release and its APK download have been published.
@@ -146,21 +179,23 @@ $feed = [ordered]@{
     package = 'io.github.arcanearmorcollector.android'
     latest = [ordered]@{
         package = 'io.github.arcanearmorcollector.android'
-        version_name = '0.2.0'
-        version_code = 16
-        release_tag = 'v0.2.0'
+        version_name = '0.2.1'
+        version_code = 17
+        release_tag = 'v0.2.1'
         source_commit = $sourceSha
         certificate_sha256 = $certSha256
         min_sdk = 26
-        apk_asset = 'Arcane-v0.2.0-Android.apk'
+        apk_asset = 'Arcane-v0.2.1-Android.apk'
         apk_size = (Get-Item $signed).Length
         apk_sha256 = $hash
     }
 }
 $feedFile = Join-Path $releaseDir 'android-stable.json'
 [System.IO.File]::WriteAllText($feedFile, ($feed | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
-Write-Host 'PASS: SIGNED AND GAME-FREE PUBLIC APK'
+Write-Host 'PASS: v0.2.1 SIGNED, GAME-FREE RELEASE CANDIDATE (NOT PUBLISHED)'
 Write-Host "APK: $signed"
 Write-Host "SHA256: $hash"
 Write-Host "Update feed STAGED (do not publish until GitHub APK is live): $feedFile"
+Write-Host "PASS: release signing certificate matches published v0.2.0"
+Write-Host "No app installed or published."
 Write-Host "Keep the keystore safe: $keystore"

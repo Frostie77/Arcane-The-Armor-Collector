@@ -7,3 +7,6 @@ dependencyResolutionManagement {
 }
 rootProject.name = 'ArcaneArmorCollectorAndroid'
 include ':app'
+
+include ':frostfrontend'
+project(':frostfrontend').projectDir = file('third_party/FrostFrontend/frostfrontend')

@@ -42,6 +42,14 @@ import androidx.webkit.WebViewAssetLoader;
 import java.io.IOException;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import io.github.frostfrontend.FrostFrontendView;
+import io.github.frostfrontend.FrostButtonMapper;
+import io.github.frostfrontend.FrostControlProfile;
+import io.github.frostfrontend.FrostSpeakerTest;
 
 public class MainActivity extends Activity {
     private WebView gameView;
@@ -62,6 +70,10 @@ public class MainActivity extends Activity {
     private volatile Thread speakerTestThread;
     private FrameLayout root;
     private FrameLayout optionsOverlay;
+    // Shared standalone frontend; Arcane retains ownership of all game settings and saves.
+    private FrostFrontendView sharedFrontend;
+    private FrostButtonMapper sharedMapper;
+    private final FrostSpeakerTest sharedSpeakerTest = new FrostSpeakerTest();
     private TouchControlsOverlay touchControls;
     private ScrollView optionsScroll;
     private LinearLayout optionRows;
@@ -236,6 +248,7 @@ public class MainActivity extends Activity {
         floatParams.topMargin = dp(18);
         floatParams.rightMargin = dp(18);
         root.addView(floatingOptionsButton, floatParams);
+        initializeSharedFrontend();
         setContentView(root);
         if (gameImported) {
             gameView.requestFocus();
@@ -617,7 +630,7 @@ public class MainActivity extends Activity {
         }
         updateChecking = true;
         updateStatusText = "Checking for published Android updates...";
-        if (optionsOpen && optionsTab == 3) renderOptions();
+        if (optionsOpen && optionsTab == 4) renderOptions();
         Thread worker = new Thread(() -> {
             ArcaneUpdates.Result result = ArcaneUpdates.check(getApplicationContext());
             runOnUiThread(() -> {
@@ -639,7 +652,7 @@ public class MainActivity extends Activity {
                         .putBoolean("updates_cached_available", result.available)
                         .apply();
                 }
-                if (optionsOpen && optionsTab == 3) {
+                if (optionsOpen && optionsTab == 4) {
                     menuSelection = Math.max(0, Math.min(menuSelection,
                         updateReleaseUrl == null ? 1 : 2));
                     renderOptions();
@@ -682,7 +695,271 @@ public class MainActivity extends Activity {
             .show();
     }
 
+
+    /**
+     * Shared FrostFrontend adapter. Arcane's GamepadBridge, preference keys,
+     * imported Flash files and save data remain the authoritative game state.
+     */
+    private void initializeSharedFrontend() {
+        List<FrostButtonMapper.Action> actions = new ArrayList<>();
+        for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++) {
+            actions.add(new FrostButtonMapper.Action("action_" + i,
+                GamepadBridge.ACTION_NAMES[i], GamepadBridge.defaultButton(i)));
+        }
+        sharedMapper = new FrostControlProfile("arcane", actions).createMapper();
+        syncSharedMappings();
+        sharedFrontend = new FrostFrontendView(this);
+        sharedFrontend.setVisibility(View.GONE);
+        root.addView(sharedFrontend, new FrameLayout.LayoutParams(-1, -1));
+        sharedFrontend.setTabs(Arrays.asList(
+            new FrostFrontendView.Tab("graphics", "Graphics"),
+            new FrostFrontendView.Tab("sound", "Sound"),
+            new FrostFrontendView.Tab("controls", "Controls"),
+            new FrostFrontendView.Tab("touch", "Touch Settings"),
+            new FrostFrontendView.Tab("updates", "Updates")
+        ));
+        sharedFrontend.setUpdateInfo("Arcane " + ArcaneUpdates.installedVersion(this),
+            updateLatestText, updateStatusText);
+        sharedFrontend.setBackListener(() -> {
+            if (showingMovementControls) {
+                showingMovementControls = false;
+                return true;
+            }
+            return false;
+        });
+        sharedFrontend.setAdapter(new FrostFrontendView.Adapter() {
+            @Override public List<FrostFrontendView.Item> itemsForTab(String tabId) {
+                // Leaving Controls must not strand a game-specific submenu.
+                if (!"controls".equals(tabId)) showingMovementControls = false;
+                switch (tabId) {
+                    case "graphics":
+                        optionsTab = 0;
+                        return Arrays.asList(sharedItem("display", "Display Mode",
+                            DISPLAY_NAMES[Math.max(0, displayModeIndex())],
+                            "Original 4:3 or stretched widescreen"));
+                    case "sound":
+                        optionsTab = 1;
+                        return Arrays.asList(sharedItem("speaker", "Speaker Test: Left → Right → Both",
+                            "", "Test native stereo output while gameplay is paused"));
+                    case "controls":
+                        optionsTab = 2;
+                        if (showingControls) {
+                            List<FrostFrontendView.Item> rows = new ArrayList<>();
+                            rows.add(sharedItem("map_back", "Back to Controls", "", ""));
+                            for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++) {
+                                int key = gamepad.getButton(i);
+                                rows.add(new FrostFrontendView.Item("map:" + i,
+                                    GamepadBridge.ACTION_NAMES[i], GamepadBridge.buttonName(key),
+                                    "Choose to assign a physical controller button",
+                                    key == GamepadBridge.UNMAPPED));
+                            }
+                            rows.add(sharedItem("invert_aim", "Invert Right-Stick Y",
+                                invertAimY ? "On" : "Off", "Flip vertical aim"));
+                            rows.add(sharedItem("aim_speed", "Aim Sensitivity",
+                                AIM_SPEEDS[aimSpeedIndex] + "×", "Right-stick speed"));
+                            rows.add(sharedItem("controls_reset", "Restore Default Controls",
+                                "", "Restore button mappings and aiming defaults"));
+                            return rows;
+                        }
+                        if (showingMovementControls) {
+                            return Arrays.asList(
+                                sharedItem("movement_back", "Back to Controls", "", ""),
+                                sharedItem("move_dirs", "Stick Directions",
+                                    MOVEMENT_MODES[movementMode], "WASD; D-pad unchanged"),
+                                sharedItem("move_deadzone", "Stick Deadzone",
+                                    DEADZONE_NAMES[movementDeadzoneIndex], "Physical and touch sticks"),
+                                sharedItem("move_x", "Invert Movement X",
+                                    invertMoveX ? "On" : "Off", ""),
+                                sharedItem("move_y", "Invert Movement Y",
+                                    invertMoveY ? "On" : "Off", ""),
+                                sharedItem("movement_reset", "Reset Movement Settings",
+                                    "", "Restore movement defaults")
+                            );
+                        }
+                        return Arrays.asList(
+                            sharedItem("mapping", "Button Mapping", "", "Assign controller buttons"),
+                            sharedItem("movement_settings", "Movement Settings", "",
+                                "Stick directions, deadzone and inversion")
+                        );
+                    case "touch":
+                        optionsTab = 3;
+                        return Arrays.asList(
+                            sharedItem("touch_mode", "Touch Controls", TOUCH_MODES[touchMode],
+                                "Auto-hide with controller, always show or off"),
+                            sharedItem("touch_size", "Control Size", TOUCH_SIZES[touchSizeIndex], ""),
+                            sharedItem("touch_opacity", "Opacity",
+                                TOUCH_OPACITIES[touchOpacityIndex], ""),
+                            sharedItem("touch_dpad", "Movement Pad",
+                                TOUCH_MOVEMENT[touchDpad ? 1 : 0],
+                                "Digital D-pad or analogue joystick"),
+                            sharedItem("touch_aim", "Touch Aiming",
+                                TOUCH_AIM[touchRelativeAim ? 0 : 1],
+                                touchRelativeAim ? "Swipe to aim; touch to fire" : "Tap target to fire"),
+                            sharedItem("touch_swap", "Sides", touchSwapped ? "Swapped" : "Standard", ""),
+                            sharedItem("touch_inset", "Position", TOUCH_INSETS[touchInsetIndex],
+                                "Distance from screen edge"),
+                            sharedItem("touch_reset", "Reset Touch Controls", "",
+                                "Restore touch defaults")
+                        );
+                    case "updates":
+                        optionsTab = 4;
+                        List<FrostFrontendView.Item> updates = new ArrayList<>();
+                        updates.add(sharedItem("check", "Check for Updates",
+                            updateChecking ? "Checking..." : updateLatestText,
+                            "Check verified stable GitHub release"));
+                        updates.add(sharedItem("auto_updates", "Check Automatically",
+                            updatesAutomatic ? "On" : "Off",
+                            "Check for published updates at startup"));
+                        if (updateReleaseUrl != null)
+                            updates.add(sharedItem("view_release", "View Release",
+                                updateLatestText, "Open verified GitHub release page"));
+                        return updates;
+                    default:
+                        return new ArrayList<>();
+                }
+            }
+
+            @Override public void onItemSelected(String tabId, String itemId) {
+                handleSharedItem(itemId, 1);
+            }
+
+            @Override public void onItemAdjusted(String tabId, String itemId, int direction) {
+                if (itemId.equals("display") || itemId.equals("auto_updates") ||
+                    itemId.equals("invert_aim") || itemId.equals("aim_speed") ||
+                    itemId.equals("move_dirs") || itemId.equals("move_deadzone") ||
+                    itemId.equals("move_x") || itemId.equals("move_y") ||
+                    itemId.startsWith("touch_") && !itemId.equals("touch_reset"))
+                    handleSharedItem(itemId, direction);
+            }
+
+            @Override public void onVisibilityChanged(boolean visible) {
+                optionsOpen = visible;
+                gamepad.release();
+                if (touchControls != null) touchControls.releaseAll();
+                if (floatingOptionsButton != null)
+                    floatingOptionsButton.setVisibility(visible ? View.GONE : View.VISIBLE);
+                if (!visible) {
+                    sharedSpeakerTest.stop();
+                    showingControls = false;
+                    showingMovementControls = false;
+                }
+                refreshTouchControls();
+                if (gameView != null) {
+                    gameView.evaluateJavascript(
+                        "if(window.arcaneSetMenuPaused)window.arcaneSetMenuPaused(" +
+                        visible + ");", null);
+                    if (!visible) gameView.requestFocus();
+                }
+                if (!visible) maybeShowUpdateNotice();
+            }
+        });
+    }
+
+    private FrostFrontendView.Item sharedItem(String id, String title, String value, String description) {
+        return new FrostFrontendView.Item(id, title, value, description);
+    }
+
+    private void syncSharedMappings() {
+        if (sharedMapper == null || gamepad == null) return;
+        sharedMapper.resetDefaults();
+        for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++)
+            sharedMapper.assign("action_" + i, gamepad.getButton(i));
+    }
+
+    private void refreshSharedFrontend() {
+        if (sharedFrontend == null) return;
+        sharedFrontend.setUpdateInfo("Arcane " + ArcaneUpdates.installedVersion(this),
+            updateLatestText, updateStatusText);
+    }
+
+    private void handleSharedItem(String id, int direction) {
+        if (id.equals("display")) {
+            cycleDisplay(direction);
+        } else if (id.equals("speaker")) {
+            if (sharedSpeakerTest.start())
+                Toast.makeText(this, "LEFT, then RIGHT, then BOTH", Toast.LENGTH_LONG).show();
+        } else if (id.equals("mapping")) {
+            showingControls = true;
+            showingMovementControls = false;
+            syncSharedMappings();
+            sharedFrontend.enterButtonMapping(sharedMapper, () -> showingControls = false);
+        } else if (id.equals("map_back")) {
+            sharedFrontend.requestMappingBack();
+        } else if (id.startsWith("map:")) {
+            int action = Integer.parseInt(id.substring(4));
+            sharedFrontend.beginButtonCapture(GamepadBridge.ACTION_NAMES[action],
+                new FrostFrontendView.ButtonCaptureListener() {
+                    @Override public void onCaptured(int code) {
+                        if (!GamepadBridge.canBindButton(code)) return;
+                        FrostButtonMapper.Change change =
+                            sharedMapper.assign("action_" + action, code);
+                        gamepad.setButton(action, code);
+                        saveBindings();
+                        syncSharedMappings();
+                        if (change.unmappedAction != null)
+                            sharedFrontend.showMappingNotice(
+                                change.unmappedAction + " is now Unmapped");
+                        sharedFrontend.refresh();
+                    }
+                    @Override public void onCancelled() {}
+                });
+        } else if (id.equals("controls_reset")) {
+            restoreControls();
+            syncSharedMappings();
+        } else if (id.equals("invert_aim")) {
+            invertAimY = !invertAimY;
+            setAimPreferences();
+        } else if (id.equals("aim_speed")) {
+            aimSpeedIndex = (aimSpeedIndex + direction + AIM_SPEEDS.length) % AIM_SPEEDS.length;
+            setAimPreferences();
+        } else if (id.equals("movement_settings")) {
+            showingMovementControls = true;
+            showingControls = false;
+        } else if (id.equals("movement_back")) {
+            showingMovementControls = false;
+        } else if (id.equals("movement_reset")) {
+            resetMovementPreferences();
+        } else if (id.equals("move_dirs")) {
+            movementMode = (movementMode + direction + MOVEMENT_MODES.length) %
+                MOVEMENT_MODES.length;
+            saveMovementPreferences();
+        } else if (id.equals("move_deadzone")) {
+            movementDeadzoneIndex = (movementDeadzoneIndex + direction +
+                DEADZONE_NAMES.length) % DEADZONE_NAMES.length;
+            saveMovementPreferences();
+        } else if (id.equals("move_x") || id.equals("move_y")) {
+            if (id.equals("move_x")) invertMoveX = !invertMoveX;
+            else invertMoveY = !invertMoveY;
+            saveMovementPreferences();
+        } else if (id.equals("touch_reset")) {
+            resetTouchPreferences();
+        } else if (id.startsWith("touch_")) {
+            switch (id) {
+                case "touch_mode": touchMode = (touchMode + direction + TOUCH_MODES.length) %
+                    TOUCH_MODES.length; break;
+                case "touch_size": touchSizeIndex = (touchSizeIndex + direction +
+                    TOUCH_SIZES.length) % TOUCH_SIZES.length; break;
+                case "touch_opacity": touchOpacityIndex = (touchOpacityIndex + direction +
+                    TOUCH_OPACITIES.length) % TOUCH_OPACITIES.length; break;
+                case "touch_dpad": touchDpad = !touchDpad; break;
+                case "touch_aim": touchRelativeAim = !touchRelativeAim; break;
+                case "touch_swap": touchSwapped = !touchSwapped; break;
+                case "touch_inset": touchInsetIndex = (touchInsetIndex + direction +
+                    TOUCH_INSETS.length) % TOUCH_INSETS.length; break;
+                default: return;
+            }
+            saveTouchPreferences();
+        } else if (id.equals("check")) {
+            startUpdateCheck(true);
+        } else if (id.equals("auto_updates")) {
+            toggleAutomaticUpdates();
+        } else if (id.equals("view_release")) {
+            openUpdateRelease();
+        }
+    }
+
     private void openOptions() {
+        if (sharedFrontend != null) { sharedFrontend.open(); return; }
         if (optionsOpen) return;
         if (touchControls != null) touchControls.releaseAll();
         gamepad.release();
@@ -709,6 +986,7 @@ public class MainActivity extends Activity {
     }
 
     private void closeOptions() {
+        if (sharedFrontend != null) { sharedFrontend.close(); return; }
         if (!optionsOpen) return;
         optionsOpen = false;
         unmappedWarningLayer = null;
@@ -732,6 +1010,7 @@ public class MainActivity extends Activity {
     }
 
     private void requestOptionsClose() {
+        if (sharedFrontend != null) { sharedFrontend.close(); return; }
         if (unmappedWarningLayer != null) return;
         if (showingControls) {
             // Closing must respect the existing unmapped-controls warning.
@@ -762,6 +1041,7 @@ public class MainActivity extends Activity {
     }
 
     private void backOptions() {
+        if (sharedFrontend != null) { sharedFrontend.back(); return; }
         if (unmappedWarningLayer != null) {
             dismissUnmappedWarning();
             return;
@@ -1016,6 +1296,7 @@ public class MainActivity extends Activity {
     }
 
     private void refreshSettingRows() {
+        if (sharedFrontend != null) { if (sharedFrontend.isOpen()) sharedFrontend.refresh(); return; }
         if (!optionsOpen || optionRows == null) return;
         if (showingMovementControls) {
             updateSettingRow(1, "Stick Directions: " + MOVEMENT_MODES[movementMode],
@@ -1321,6 +1602,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderOptions() {
+        if (sharedFrontend != null) { refreshSharedFrontend(); return; }
         if (!optionsOpen || optionsOverlay == null) return;
         // Preserve scrolling only within the same page. Changing a setting
         // updates its existing row directly, so the menu never bounces.
@@ -1581,6 +1863,8 @@ public class MainActivity extends Activity {
             }
             return super.dispatchKeyEvent(event);
         }
+        if (sharedFrontend != null && sharedFrontend.isOpen())
+            return sharedFrontend.handleKeyEvent(event);
         if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_START &&
             isGamepadKey(event)) {
             if (event.getAction() == KeyEvent.ACTION_DOWN &&
@@ -1591,12 +1875,15 @@ public class MainActivity extends Activity {
             }
             return true;
         }
-        if (optionsOpen) return handleOptionsKey(event);
+        if (optionsOpen) return sharedFrontend == null ?
+            handleOptionsKey(event) : sharedFrontend.handleKeyEvent(event);
         if (isGamepadKey(event) && touchMode == 0) refreshTouchControls();
         if (gamepad != null && gamepad.handleKey(event)) return true;
         return super.dispatchKeyEvent(event);
     }
     @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (sharedFrontend != null && sharedFrontend.isOpen())
+            return sharedFrontend.handleGenericMotionEvent(event);
         if (optionsOpen && (event.getSource() & InputDevice.SOURCE_JOYSTICK) != 0)
             return handleOptionsMotion(event);
         if ((event.getSource() & InputDevice.SOURCE_JOYSTICK) != 0 && touchMode == 0)
@@ -1611,6 +1898,7 @@ public class MainActivity extends Activity {
     }
     @Override public void onPause() {
         backgrounded = true;
+        sharedSpeakerTest.stop();
         if (speakerTestThread != null) speakerTestThread.interrupt();
         if (touchControls != null) touchControls.releaseAll();
         if (gamepad != null) gamepad.release();
@@ -1648,6 +1936,7 @@ public class MainActivity extends Activity {
     }
     @Override public void onDestroy() {
         backgrounded = true;
+        sharedSpeakerTest.stop();
         if (speakerTestThread != null) speakerTestThread.interrupt();
         if (gamepad != null) gamepad.release();
         if (gameView != null) {
