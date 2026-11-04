@@ -306,6 +306,47 @@ final class GamepadBridge {
         return topHud || potionHud;
     }
 
+    // HUD touches must be real DOWN/UP gestures. The old HUD handler
+    // sent both events consecutively on finger release, which Ruffle often
+    // did not register as a click. Preserve the Relative crosshair and use
+    // the normal Direct touch gesture only inside recognised HUD areas.
+    private boolean hudTouchActive;
+    private float hudSavedX, hudSavedY;
+
+    void beginTouchHud(float x, float y) {
+        if (hudTouchActive || touchTrackpadAttacking || attacking) return;
+        initializePointer();
+        if (!pointerInitialized) return;
+        hudSavedX = pointerX;
+        hudSavedY = pointerY;
+        hudTouchActive = true;
+        beginTouchDirect(x, y);
+    }
+
+    void moveTouchHud(float x, float y) {
+        if (hudTouchActive) moveTouchDirect(x, y);
+    }
+
+    void endTouchHud() {
+        if (!hudTouchActive) return;
+        hudTouchActive = false;
+        endTouchDirect();
+        pointerX = hudSavedX;
+        pointerY = hudSavedY;
+        clampPointer();
+        // Restore Flash-side aim only after Ruffle has consumed the mouse-up.
+        webView.postOnAnimation(() -> {
+            if (hudTouchActive || touchTrackpadAttacking || attacking ||
+                !pointerInitialized) return;
+            sendHover();
+            float nx = pointerX / Math.max(1, webView.getWidth());
+            float ny = pointerY / Math.max(1, webView.getHeight());
+            webView.evaluateJavascript(
+                "if(window.arcaneControllerAim)window.arcaneControllerAim(" +
+                nx + "," + ny + ");", null);
+        });
+    }
+
     void tapTouchDirect(float x, float y) {
         initializePointer();
         if (!pointerInitialized || attacking || touchTrackpadAttacking) return;
@@ -431,6 +472,7 @@ final class GamepadBridge {
     }
 
     void releaseTouchControls() {
+        hudTouchActive = false;
         touchUp = touchDown = touchLeft = touchRight = false;
         touchDpadUp = touchDpadDown = touchDpadLeft = touchDpadRight = false;
         touchTrackpadAttacking = false;
