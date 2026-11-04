@@ -983,6 +983,14 @@ public class MainActivity extends Activity {
             if (GamepadBridge.canBindButton(code)) assignButton(code);
             return true;
         }
+        if (code == KeyEvent.KEYCODE_BUTTON_L1) {
+            selectOptionsTab((optionsTab + 2) % 3);
+            return true;
+        }
+        if (code == KeyEvent.KEYCODE_BUTTON_R1) {
+            selectOptionsTab((optionsTab + 1) % 3);
+            return true;
+        }
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_UP: navigateOptions(-1); break;
             case KeyEvent.KEYCODE_DPAD_DOWN: navigateOptions(1); break;
@@ -1047,13 +1055,7 @@ public class MainActivity extends Activity {
             if (event.getAction() == KeyEvent.ACTION_DOWN &&
                 event.getRepeatCount() == 0) {
                 if (unmappedWarningLayer != null) dismissUnmappedWarning();
-                else if (optionsOpen && showingControls) {
-                    if (bindingAction >= 0) {
-                        bindingAction = -1;
-                        renderOptions();
-                    }
-                    leaveControls(true);
-                } else if (optionsOpen) closeOptions();
+                else if (optionsOpen) requestOptionsClose();
                 else openOptions();
             }
             return true;
