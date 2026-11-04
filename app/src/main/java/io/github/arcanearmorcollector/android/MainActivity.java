@@ -57,7 +57,9 @@ public class MainActivity extends Activity {
     private boolean invertAimY;
     private int aimSpeedIndex = 1;
     private int touchMode, touchSizeIndex = 1, touchOpacityIndex = 1, touchInsetIndex = 1;
-    private boolean touchSwapped;
+    private boolean touchSwapped, touchDpad, touchRelativeAim = true;
+    private static final String[] TOUCH_MOVEMENT = {"Joystick", "D-pad"};
+    private static final String[] TOUCH_AIM = {"Relative", "Direct"};
     private int movementMode, movementDeadzoneIndex = 1;
     private boolean invertMoveX, invertMoveY;
     private static final String[] MOVEMENT_MODES = {"8-way", "4-way"};
@@ -94,6 +96,8 @@ public class MainActivity extends Activity {
         touchOpacityIndex = Math.max(0, Math.min(2, prefs.getInt("touch_opacity", 1)));
         touchInsetIndex = Math.max(0, Math.min(2, prefs.getInt("touch_inset", 1)));
         touchSwapped = prefs.getBoolean("touch_swap", false);
+        touchDpad = prefs.getBoolean("touch_dpad", false);
+        touchRelativeAim = prefs.getBoolean("touch_relative_aim", true);
         movementMode = Math.max(0, Math.min(1, prefs.getInt("movement_mode", 0)));
         movementDeadzoneIndex = Math.max(0, Math.min(2, prefs.getInt("movement_deadzone", 1)));
         invertMoveX = prefs.getBoolean("invert_move_x", false);
@@ -175,7 +179,7 @@ public class MainActivity extends Activity {
         root.addView(touchControls, new FrameLayout.LayoutParams(-1, -1));
         touchControls.configure(TOUCH_SIZE_VALUES[touchSizeIndex],
             TOUCH_OPACITY_VALUES[touchOpacityIndex], touchSwapped,
-            TOUCH_INSET_VALUES[touchInsetIndex]);
+            TOUCH_INSET_VALUES[touchInsetIndex], touchDpad, touchRelativeAim);
         refreshTouchControls();
         // Render a genuine three-line icon instead of a font glyph, which
         // Android WebView / system fonts can draw off-centre.
@@ -332,10 +336,12 @@ public class MainActivity extends Activity {
             .putInt("touch_size", touchSizeIndex)
             .putInt("touch_opacity", touchOpacityIndex)
             .putInt("touch_inset", touchInsetIndex)
-            .putBoolean("touch_swap", touchSwapped).apply();
+            .putBoolean("touch_swap", touchSwapped)
+            .putBoolean("touch_dpad", touchDpad)
+            .putBoolean("touch_relative_aim", touchRelativeAim).apply();
         touchControls.configure(TOUCH_SIZE_VALUES[touchSizeIndex],
             TOUCH_OPACITY_VALUES[touchOpacityIndex], touchSwapped,
-            TOUCH_INSET_VALUES[touchInsetIndex]);
+            TOUCH_INSET_VALUES[touchInsetIndex], touchDpad, touchRelativeAim);
         refreshTouchControls();
     }
 
@@ -343,6 +349,8 @@ public class MainActivity extends Activity {
         touchMode = 0;
         touchSizeIndex = touchOpacityIndex = touchInsetIndex = 1;
         touchSwapped = false;
+        touchDpad = false;
+        touchRelativeAim = true;
         saveTouchPreferences();
         refreshSettingRows();
     }
@@ -620,7 +628,7 @@ public class MainActivity extends Activity {
     private void navigateOptions(int direction) {
         if (bindingAction >= 0) return;
         int count = showingControls ? 11 : showingMovementControls ? 6 :
-            showingTouchControls ? 6 : optionsTab == 1 ? 2 : 1;
+            showingTouchControls ? 8 : optionsTab == 1 ? 2 : 1;
         menuSelection = (menuSelection + direction + count) % count;
         updateOptionsSelection();
     }
@@ -645,8 +653,10 @@ public class MainActivity extends Activity {
                 case 0: touchMode = (touchMode + direction + 3) % 3; break;
                 case 1: touchSizeIndex = (touchSizeIndex + direction + 3) % 3; break;
                 case 2: touchOpacityIndex = (touchOpacityIndex + direction + 3) % 3; break;
-                case 3: touchSwapped = !touchSwapped; break;
-                case 4: touchInsetIndex = (touchInsetIndex + direction + 3) % 3; break;
+                case 3: touchDpad = !touchDpad; break;
+                case 4: touchRelativeAim = !touchRelativeAim; break;
+                case 5: touchSwapped = !touchSwapped; break;
+                case 6: touchInsetIndex = (touchInsetIndex + direction + 3) % 3; break;
                 default: return;
             }
             saveTouchPreferences();
@@ -665,7 +675,7 @@ public class MainActivity extends Activity {
     private void activateOption() {
         if (bindingAction >= 0) return;
         if (showingTouchControls) {
-            if (menuSelection == 5) resetTouchPreferences();
+            if (menuSelection == 7) resetTouchPreferences();
             else adjustOption(1);
         } else if (showingMovementControls) {
             if (menuSelection == 0) backOptions();
@@ -716,8 +726,12 @@ public class MainActivity extends Activity {
                 touchMode == 1 ? "Always show" : "Hidden");
             updateSettingRow(1, "Control Size: " + TOUCH_SIZES[touchSizeIndex], "");
             updateSettingRow(2, "Opacity: " + TOUCH_OPACITIES[touchOpacityIndex], "");
-            updateSettingRow(3, "Sides: " + (touchSwapped ? "Swapped" : "Standard"), "");
-            updateSettingRow(4, "Position: " + TOUCH_INSETS[touchInsetIndex],
+            updateSettingRow(3, "Movement Pad: " + TOUCH_MOVEMENT[touchDpad ? 1 : 0],
+                "Digital D-pad or analogue joystick");
+            updateSettingRow(4, "Touch Aiming: " + TOUCH_AIM[touchRelativeAim ? 0 : 1],
+                touchRelativeAim ? "Swipe to aim · touch to fire" : "Tap the target to fire");
+            updateSettingRow(5, "Sides: " + (touchSwapped ? "Swapped" : "Standard"), "");
+            updateSettingRow(6, "Position: " + TOUCH_INSETS[touchInsetIndex],
                 "Distance from edge");
         } else if (showingControls) {
             updateSettingRow(8, "Invert Right-Stick Y: " +
@@ -848,7 +862,7 @@ public class MainActivity extends Activity {
         // Persistent header: the close control replaces "Resume Game".
         FrameLayout header = new FrameLayout(this);
         panel.addView(header, new LinearLayout.LayoutParams(-1, dp(49)));
-        TextView title = makeText("FROSTFRONTEND", 22, 0xFFFFE0A1, 0x00000000);
+        TextView title = makeText("SETTINGS", 22, 0xFFFFE0A1, 0x00000000);
         title.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout.LayoutParams titleParams = new FrameLayout.LayoutParams(
             -1, -1, Gravity.LEFT | Gravity.CENTER_VERTICAL);
@@ -935,11 +949,17 @@ public class MainActivity extends Activity {
                 touchMode == 1 ? "Always show" : "Hidden", 0);
             addOptionRow(rows, scroll, "Control Size: " + TOUCH_SIZES[touchSizeIndex], "", 1);
             addOptionRow(rows, scroll, "Opacity: " + TOUCH_OPACITIES[touchOpacityIndex], "", 2);
+            addOptionRow(rows, scroll, "Movement Pad: " +
+                TOUCH_MOVEMENT[touchDpad ? 1 : 0],
+                "Digital D-pad or analogue joystick", 3);
+            addOptionRow(rows, scroll, "Touch Aiming: " +
+                TOUCH_AIM[touchRelativeAim ? 0 : 1],
+                touchRelativeAim ? "Swipe to aim · touch to fire" : "Tap the target to fire", 4);
             addOptionRow(rows, scroll, "Sides: " +
-                (touchSwapped ? "Swapped" : "Standard"), "", 3);
+                (touchSwapped ? "Swapped" : "Standard"), "", 5);
             addOptionRow(rows, scroll, "Position: " + TOUCH_INSETS[touchInsetIndex],
-                "Distance from edge", 4);
-            addOptionRow(rows, scroll, "Reset Touch Controls", "Restore defaults", 5);
+                "Distance from edge", 6);
+            addOptionRow(rows, scroll, "Reset Touch Controls", "Restore defaults", 7);
         } else if (optionsTab == 1) {
             addOptionRow(rows, scroll, "Button Mapping", "Assign controller buttons", 0);
             addOptionRow(rows, scroll, "Movement Settings", "Stick directions, deadzone and inversion", 1);
