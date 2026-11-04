@@ -29,6 +29,42 @@ window.RufflePlayer.config = {
   allowScriptAccess: true,
   publicPath: 'ruffle/'
 };
+// Native save diagnostics: only key names and value sizes are logged.
+// We never log save contents or intentionally overwrite existing saves.
+(function installSaveDiagnostics() {
+  const report = reason => {
+    try {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const value = localStorage.getItem(key);
+        keys.push(String(key).slice(0, 90) + ':' +
+          (value ? value.length : 0));
+      }
+      console.info('ArcaneSaveDiag ' + reason + ' localStorage=' +
+        keys.length + ' keys=[' + keys.join(',') + ']');
+    } catch (error) {
+      console.warn('ArcaneSaveDiag storage-read-error ' + String(error));
+    }
+  };
+  window.arcaneSaveSnapshot = report;
+  try {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      const result = original.apply(this, arguments);
+      if (this === localStorage)
+        console.info('ArcaneSaveDiag write key=' + String(key).slice(0, 90) +
+          ' chars=' + String(value).length);
+      return result;
+    };
+  } catch (error) {
+    console.warn('ArcaneSaveDiag hook-error ' + String(error));
+  }
+  report('startup');
+  setInterval(() => report('periodic'), 15000);
+  window.addEventListener('pagehide', () => report('pagehide'));
+})();
+
 // Display modes are CSS-only to keep the loaded Flash game running without
 // resetting a round or losing progress. Arcane's SWF is 4:3, so "fill"
 // preserves its shape but crops the top/bottom; stretch fills the viewport
@@ -258,6 +294,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     // memory, without altering it on disk. Frame 20 is arena gameplay,
     // while the other main timeline frames are menus / equipment / results.
     player.onFSCommand = (command, args) => {
+      if (command === 'arcaneFrame') {
+        console.info('ArcaneRootFrame ' + String(args));
+        return;
+      }
       if (command !== 'arcanePhase') return;
       const phase = args === 'arena' ? 'arena' : 'menu';
       console.info('ArcanePhase: ' + phase);
