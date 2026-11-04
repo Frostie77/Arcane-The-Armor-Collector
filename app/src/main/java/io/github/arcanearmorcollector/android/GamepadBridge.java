@@ -35,7 +35,8 @@ final class GamepadBridge {
     private boolean invertMoveX, invertMoveY;
     // Re-send a neutral key-up after the WebView has had time to process a
     // scene change or touch. This recovers a key release lost by Ruffle.
-    private static final long NEUTRAL_KEY_RECOVERY_MS = 180L;
+    private static final long NEUTRAL_KEY_RECOVERY_MS = 55L;
+    private static final int NEUTRAL_RECOVERY_PASSES = 4;
     private final WebView webView;
     static final String[] ACTION_NAMES = {
         "Attack", "Alternate Attack", "Switch Weapon", "Swap Armour",
@@ -68,6 +69,7 @@ final class GamepadBridge {
     private boolean hatUp, hatDown, hatLeft, hatRight;
     private boolean attacking;
     private boolean pointerInitialized, loopRunning, neutralRecoveryQueued, wasMoving;
+    private int lastMovementMask, neutralRecoveryPass;
     private boolean nativeCursorEnabled = true;
     private boolean widescreenDisplay;
     private float pointerX, pointerY, aimX, aimY;
@@ -497,46 +499,59 @@ final class GamepadBridge {
         cursor.invalidate();
     }
 
-    private void updateMovement() {
-        boolean up = keyUp || stickUp || hatUp || touchUp || touchDpadUp;
-        boolean down = keyDown || stickDown || hatDown || touchDown || touchDpadDown;
-        boolean left = keyLeft || stickLeft || hatLeft || touchLeft || touchDpadLeft;
-        boolean right = keyRight || stickRight || hatRight || touchRight || touchDpadRight;
-        // Release old directions BEFORE pressing replacements so the Flash
-        // game cannot briefly see contradictory movement keys held.
-        if (!up) setKey(KeyEvent.KEYCODE_W, false);
-        if (!down) setKey(KeyEvent.KEYCODE_S, false);
-        if (!left) setKey(KeyEvent.KEYCODE_A, false);
-        if (!right) setKey(KeyEvent.KEYCODE_D, false);
-        if (up) setKey(KeyEvent.KEYCODE_W, true);
-        if (down) setKey(KeyEvent.KEYCODE_S, true);
-        if (left) setKey(KeyEvent.KEYCODE_A, true);
-        if (right) setKey(KeyEvent.KEYCODE_D, true);
+    private int currentMovementMask() {
+        int mask = 0;
+        if (keyUp || stickUp || hatUp || touchUp || touchDpadUp) mask |= 1;
+        if (keyDown || stickDown || hatDown || touchDown || touchDpadDown) mask |= 2;
+        if (keyLeft || stickLeft || hatLeft || touchLeft || touchDpadLeft) mask |= 4;
+        if (keyRight || stickRight || hatRight || touchRight || touchDpadRight) mask |= 8;
+        return mask;
+    }
 
-        // Ruffle can miss key-up when a touch (R2) changes focus or when the
-        // Flash scene changes. Once every movement source is neutral, send
-        // one unconditional set of releases even if our local cache already
-        // believes the keys are up.
-        if (!up && !down && !left && !right) {
-            if (wasMoving && !neutralRecoveryQueued) {
+    private void updateMovement() {
+        int mask = currentMovementMask();
+        if (mask != lastMovementMask) {
+            // Release every inactive movement direction on EACH transition,
+            // even when our native key cache believes it is already up.
+            // Ruffle can drop an earlier key-up while aim touches change
+            // WebView focus, leaving a stale opposite direction pressed.
+            int[] codes = {KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_S,
+                KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_D};
+            int[] bits = {1, 2, 4, 8};
+            for (int i = 0; i < codes.length; i++) {
+                if ((mask & bits[i]) != 0) continue;
+                pressedKeys.remove(codes[i]);
+                dispatchTranslatedKey(codes[i], false);
+            }
+            for (int i = 0; i < codes.length; i++) {
+                if ((mask & bits[i]) != 0) setKey(codes[i], true);
+            }
+            Log.d(TAG, "movement-direction mask=" + mask +
+                " previous=" + lastMovementMask);
+            lastMovementMask = mask;
+        }
+
+        if (mask == 0) {
+            if (wasMoving) {
+                webView.removeCallbacks(neutralMovementRecovery);
                 neutralRecoveryQueued = true;
+                neutralRecoveryPass = 0;
                 webView.postDelayed(neutralMovementRecovery, NEUTRAL_KEY_RECOVERY_MS);
             }
         } else if (neutralRecoveryQueued) {
             webView.removeCallbacks(neutralMovementRecovery);
             neutralRecoveryQueued = false;
+            neutralRecoveryPass = 0;
         }
-        wasMoving = up || down || left || right;
+        wasMoving = mask != 0;
     }
 
     private final Runnable neutralMovementRecovery = new Runnable() {
         @Override public void run() {
             neutralRecoveryQueued = false;
-            if (keyUp || keyDown || keyLeft || keyRight ||
-                stickUp || stickDown || stickLeft || stickRight ||
-                hatUp || hatDown || hatLeft || hatRight ||
-                touchUp || touchDown || touchLeft || touchRight ||
-                touchDpadUp || touchDpadDown || touchDpadLeft || touchDpadRight) return;
+            // Do not release movement keys while any physical or touchscreen
+            // direction is genuinely held.
+            if (currentMovementMask() != 0) return;
             for (int key : new int[] {
                 KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_A,
                 KeyEvent.KEYCODE_S, KeyEvent.KEYCODE_D
@@ -544,13 +559,18 @@ final class GamepadBridge {
                 pressedKeys.remove(key);
                 dispatchTranslatedKey(key, false);
             }
-            // Recover stale A/S/D movement with player-targeted taps.
-            // Arcane uses W to jump, so the web recovery sends W key-up
-            // only and never presses W at the end of a movement.
             webView.evaluateJavascript(
                 "if(window.arcaneClearMovementKeys)window.arcaneClearMovementKeys();",
                 null);
-            Log.d(TAG, "movement-neutral: WASD release + Ruffle non-jump reset");
+            neutralRecoveryPass++;
+            Log.d(TAG, "movement-neutral-release pass=" + neutralRecoveryPass);
+            // Repeat briefly to cover Ruffle frames that miss the first
+            // release during simultaneous touch/attack. Only key-UP events
+            // are sent; this never synthesises movement or jump presses.
+            if (neutralRecoveryPass < NEUTRAL_RECOVERY_PASSES) {
+                neutralRecoveryQueued = true;
+                webView.postDelayed(this, 90L);
+            }
         }
     };
 
@@ -688,6 +708,8 @@ final class GamepadBridge {
     void release() {
         webView.removeCallbacks(neutralMovementRecovery);
         neutralRecoveryQueued = false;
+        neutralRecoveryPass = 0;
+        lastMovementMask = 0;
         wasMoving = false;
         aimX = aimY = 0;
         physicalAimX = physicalAimY = touchAimX = touchAimY = 0;
