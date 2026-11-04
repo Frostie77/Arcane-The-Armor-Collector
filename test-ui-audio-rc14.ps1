@@ -22,7 +22,7 @@ if ($LASTEXITCODE -ne 0) { throw "Android install failed" }
 if ($LASTEXITCODE -ne 0) { throw "App could not start" }
 
 Write-Host ""
-Write-Host "Arcane rc14 — adjust your Odin MEDIA volume to a comfortable level."
+Write-Host "Arcane rc14 - adjust your Odin MEDIA volume to a comfortable level."
 Write-Host "Open FrostFrontend > Graphics > Speaker Test."
 Write-Host "A message confirms the test. Listen for LEFT, RIGHT and BOTH tones."
 Write-Host "Then confirm tab heading readability and compare ordinary game audio."
