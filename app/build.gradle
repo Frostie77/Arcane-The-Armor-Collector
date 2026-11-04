@@ -10,8 +10,8 @@ android {
         applicationId 'io.github.arcanearmorcollector.android'
         minSdk 26
         targetSdk 35
-        versionCode 7
-        versionName '0.2.0-rc6-debug'
+        versionCode 8
+        versionName '0.2.0-rc7-debug'
     }
     buildTypes {
         release { minifyEnabled false }
