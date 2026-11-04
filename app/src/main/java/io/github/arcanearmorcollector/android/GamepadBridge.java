@@ -68,6 +68,7 @@ final class GamepadBridge {
     private boolean hatUp, hatDown, hatLeft, hatRight;
     private boolean attacking;
     private boolean pointerInitialized, loopRunning, neutralRecoveryQueued, wasMoving;
+    private boolean nativeCursorEnabled = true;
     private boolean widescreenDisplay;
     private float pointerX, pointerY, aimX, aimY;
     private long attackDownTime, lastFrameTime, lastScriptAimTime;
@@ -357,6 +358,14 @@ final class GamepadBridge {
         if (pointerInitialized) clampPointer();
     }
 
+    void setNativeCursorEnabled(boolean enabled) {
+        if (nativeCursorEnabled == enabled && cursor.visible ==
+            (enabled && pointerInitialized)) return;
+        nativeCursorEnabled = enabled;
+        cursor.visible = enabled && pointerInitialized;
+        cursor.invalidate();
+    }
+
     private void updateMovement() {
         boolean up = keyUp || stickUp || hatUp || touchUp || touchDpadUp;
         boolean down = keyDown || stickDown || hatDown || touchDown || touchDpadDown;
@@ -437,7 +446,7 @@ final class GamepadBridge {
         pointerX = webView.getWidth() / 2f;
         pointerY = webView.getHeight() / 2f;
         pointerInitialized = true;
-        cursor.visible = true;
+        cursor.visible = nativeCursorEnabled;
         cursor.invalidate();
     }
 
