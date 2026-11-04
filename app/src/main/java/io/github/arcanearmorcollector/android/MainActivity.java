@@ -1011,12 +1011,18 @@ public class MainActivity extends Activity {
                     if (!writeStereoAudio(track, silence)) break;
                 }
             }
-            // Give the hardware time to drain the queued stream.
+            // Drain all three tones plus both gaps, with a deadline in
+            // case the device routes audio to a stopped output sink.
+            long expectedFrames = (long) samplesPerStep * 3L +
+                (long) (sampleRate * 0.18f) * 2L;
+            long deadline = android.os.SystemClock.uptimeMillis() + 4500L;
             while (!Thread.currentThread().isInterrupted() &&
-                   track.getPlaybackHeadPosition() < sampleRate * 2.5f) {
+                   track.getPlaybackHeadPosition() < expectedFrames &&
+                   android.os.SystemClock.uptimeMillis() < deadline) {
                 Thread.sleep(25);
             }
-            Log.d(tag, "finished");
+            Log.d(tag, "finished playbackFrames=" +
+                track.getPlaybackHeadPosition() + "/" + expectedFrames);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             Log.d(tag, "cancelled");
