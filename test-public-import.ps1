@@ -47,47 +47,7 @@ try {
     $archive = [System.IO.Compression.ZipFile]::OpenRead($apk)
     try {
         $names = @($archive.Entries | ForEach-Object { $_.FullName })
-        if (@($names | Where-Object { $_ -match '\.swf }).Count -gt 0) {
-            throw 'SAFETY CHECK FAILED: packaged APK contains the original game.'
-        }
-        if (-not ($names -contains 'assets/www/ruffle/ruffle.js')) {
-            throw 'Ruffle runtime missing from the APK.'
-        }
-        if (-not ($names -contains 'assets/www/index.html')) {
-            throw 'Game wrapper HTML missing from the APK.'
-        }
-        Write-Host 'PASS: APK contains Ruffle and wrapper, but no original game SWF.'
-    } finally {
-        $archive.Dispose()
-    }
-} finally {
-    if ($movedRes) {
-        if (Test-Path $resFolder) { Remove-Item -LiteralPath $resFolder -Recurse -Force }
-        Move-Item -LiteralPath $heldRes -Destination $resFolder
-        Write-Host 'PASS: original local resources restored.'
-    }
-    if ($moved) {
-        Move-Item -LiteralPath $held -Destination $game
-        Write-Host 'PASS: original personal SWF restored to the project.'
-    }
-}
-
-if (Test-Path $game) {
-    & $adb push $game '/sdcard/Download/Arcane-Test-Import.swf'
-    if ($LASTEXITCODE -ne 0) { throw 'Could not copy personal game file to Odin Downloads.' }
-}
-
-& $adb install -r $apk
-if ($LASTEXITCODE -ne 0) { throw 'ADB installation failed.' }
-& $adb shell am force-stop $package
-& $adb shell am start -n "$package/io.github.arcanearmorcollector.android.MainActivity"
-if ($LASTEXITCODE -ne 0) { throw 'Could not launch import-test app.' }
-
-Write-Host ''
-Write-Host 'PASS: isolated import-test APK installed. Original Debug app and saves untouched.'
-Write-Host 'On Odin: Select Game File > Downloads > Arcane-Test-Import.swf.'
-Write-Host 'Confirm first launch, touchscreen/gamepad, and save after restarting test app.'
- }).Count -gt 0) {
+        if (@($names | Where-Object { $_ -match '\.swf$' }).Count -gt 0) {
             throw 'SAFETY CHECK FAILED: packaged APK contains the original game.'
         }
         if (-not ($names -contains 'assets/www/ruffle/ruffle.js')) {
