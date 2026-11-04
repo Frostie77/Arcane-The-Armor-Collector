@@ -8,7 +8,7 @@ Developed and tested on the **AYN Odin 2 Portal**. Other Android devices running
 
 ## Download and installation
 
-1. Download **Arcane-v0.2.0-Android.apk** from [GitHub Releases](https://github.com/Frostie77/Arcane-The-Armor-Collector/releases).
+1. Download the latest **Arcane Android APK** from [GitHub Releases](https://github.com/Frostie77/Arcane-The-Armor-Collector/releases).
 2. Install and open the APK on your Android device.
 3. Download the [original Arcane SWF from Newgrounds](https://uploads.ungrounded.net/442000/442706_Arcane.swf), or use your own legally obtained copy.
 4. Tap **Select Game File** and choose the SWF from your Downloads folder.
@@ -18,13 +18,14 @@ You can also visit the [original game page on Newgrounds](https://www.newgrounds
 
 ## Introducing FrostFrontend
 
-**FrostFrontend** is my custom Android settings interface, built to make Arcane comfortable to play on handhelds and touchscreens.
+**FrostFrontend** is a reusable Android settings library shared with other ports, built for gamepads and touchscreens. Arcane retains ownership of all game settings and save data.
 
 Open it with the **Start** button on a controller or the **three-line menu icon** on-screen. The game pauses while the menu is open.
 
 | Section | Features |
 | --- | --- |
-| **Graphics** | Original 4:3 or stretched widescreen display, plus a left/right speaker test. |
+| **Graphics** | Original 4:3 or stretched widescreen display. |
+| **Sound** | Left, right and both-speaker testing. |
 | **Controls** | Button remapping, aiming sensitivity, inverted aiming and movement settings. |
 | **Touch Settings** | On-screen joystick or D-pad, relative/direct aiming, size, opacity and positioning. |
 | **Updates** | Installed version, manual update check and optional automatic checks. |
@@ -50,7 +51,7 @@ You can change the button mapping in **FrostFrontend → Controls**. Touchscreen
 
 ## Saves and updates
 
-The app keeps your game progress and settings in its own Android app storage. Future signed release updates should install over the existing public APK without removing that data.
+The app keeps progress and settings in Android app storage. The signed v0.2.1 upgrade was tested over public v0.2.0 with existing game progress and FrostFrontend preferences preserved. Install new releases over the existing app without uninstalling it.
 
 **Do not uninstall the app or clear its storage unless you've backed up anything you need.** Private Debug builds have a different signing certificate and cannot be directly replaced by the public release APK.
 
@@ -58,13 +59,13 @@ Gameplay works offline. Internet access is only used for optional update checks 
 
 ## Known issue
 
-Some testing on the Odin 2 Portal revealed occasional distorted or uneven left/right game audio. **FrostFrontend → Graphics → Speaker Test** can help check your device's audio output.
+Some testing on the Odin 2 Portal revealed occasional distorted or uneven left/right game audio. **FrostFrontend → Sound → Speaker Test** tests native stereo output; a successful test does not rule out game-audio issues.
 
 ## Building from source
 
 For developers on Windows, install **JDK 17** and the **Android SDK**, then run `prepare.ps1` to download the required Ruffle runtime and Gradle tools. Build with Gradle in the project folder. Your own game SWF can be imported when the app starts; it is not needed inside the APK.
 
-The included release scripts are intended for this project's release maintainer and require a separate, protected signing key. Do not commit signing keys or game files.
+The release scripts require the original protected signing key and local custom launcher artwork. `verify-signed-candidate.ps1` checks the signed APK without rebuilding it. Do not commit keys, custom art or game files.
 
 ## Credits and disclaimer
 
