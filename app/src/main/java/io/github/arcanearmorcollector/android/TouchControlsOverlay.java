@@ -253,30 +253,37 @@ final class TouchControlsOverlay extends FrameLayout {
             }
         }
 
-        @Override protected void onDraw(Canvas c) {
-            float cx = getWidth()*0.5f, cy = getHeight()*0.5f;
-            float unit = Math.min(cx, cy)/1.75f;
+        private void drawDirection(Canvas canvas, float x, float y,
+                                   float size, String arrow, boolean pressed) {
+            float half = size * 0.5f;
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(background);
-            c.drawRoundRect(cx-unit, cy-unit*1.55f, cx+unit,
-                cy+unit*1.55f, dp(8), dp(8), paint);
-            c.drawRoundRect(cx-unit*1.55f, cy-unit, cx+unit*1.55f,
-                cy+unit, dp(8), dp(8), paint);
+            paint.setColor(pressed ? 0xFF80603A : background);
+            canvas.drawRoundRect(x - half, y - half, x + half, y + half,
+                dp(9), dp(9), paint);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(dp(2));
             paint.setColor(border);
-            c.drawLine(cx-unit, cy-unit*1.55f, cx+unit, cy-unit*1.55f, paint);
-            c.drawLine(cx-unit, cy+unit*1.55f, cx+unit, cy+unit*1.55f, paint);
-            c.drawLine(cx-unit*1.55f, cy-unit, cx-unit*1.55f, cy+unit, paint);
-            c.drawLine(cx+unit*1.55f, cy-unit, cx+unit*1.55f, cy+unit, paint);
-            paint.setColor(gold);
+            canvas.drawRoundRect(x - half, y - half, x + half, y + half,
+                dp(9), dp(9), paint);
             paint.setStyle(Paint.Style.FILL);
+            paint.setColor(gold);
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setTextSize(dp(19));
-            c.drawText("↑", cx, cy-unit*0.78f, paint);
-            c.drawText("↓", cx, cy+unit*1.1f, paint);
-            c.drawText("←", cx-unit, cy+dp(7), paint);
-            c.drawText("→", cx+unit, cy+dp(7), paint);
+            canvas.drawText(arrow, x,
+                y - (paint.ascent() + paint.descent()) * 0.5f, paint);
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            // Four independent square buttons with visible gaps, rather
+            // than the overlapping cross that looked distorted on Android.
+            float cx = getWidth() * 0.5f, cy = getHeight() * 0.5f;
+            float half = Math.min(cx, cy);
+            float size = Math.max(dp(25), half * 0.56f);
+            float offset = size + dp(8);
+            drawDirection(canvas, cx, cy - offset, size, "↑", up);
+            drawDirection(canvas, cx, cy + offset, size, "↓", down);
+            drawDirection(canvas, cx - offset, cy, size, "←", left);
+            drawDirection(canvas, cx + offset, cy, size, "→", right);
         }
     }
 
