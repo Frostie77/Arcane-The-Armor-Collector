@@ -285,24 +285,23 @@ final class GamepadBridge {
         updateMappedButtons();
     }
 
-    // Keep the arena Relative except for clickable game HUD chrome.
-    // Positions below come from the original SWF's 640x480 HUD sprite:
-    // top controls occupy the small upper HUD strip; the three potions
-    // are centred at x=508, 552 and 596, y=443 in stage coordinates.
-    // Compute stage-relative position so both 4:3 and Stretch work.
-    boolean isCombatHudTouch(float x, float y) {
+    // Classify touches against the *game* HUD in 640x480 stage space.
+    //   0 = combat: normal Relative aim
+    //   1 = actual game HUD: click without changing Relative aim
+    //   2 = protective margin around the HUD: absorb without attacking
+    // The user's Odin logs confirm the right-hand top HUD icons; the lower
+    // potion hit areas are retained from the original Flash HUD geometry.
+    private int combatHudRegion(float x, float y) {
         float vw = webView.getWidth(), vh = webView.getHeight();
-        if (vw <= 0f || vh <= 0f) return false;
+        if (vw <= 0f || vh <= 0f) return 0;
         float stageW = widescreenDisplay ? vw : Math.min(vw, vh * 4f / 3f);
         float stageH = widescreenDisplay ? vh : Math.min(vh, vw * 3f / 4f);
+        if (stageW < 1 || stageH < 1) return 0;
         float gx = (x - (vw - stageW) * 0.5f) * 640f / stageW;
         float gy = (y - (vh - stageH) * 0.5f) * 480f / stageH;
-        if (gx < 0 || gx > 640 || gy < 0 || gy > 480) return false;
-        // Exact HUD sprite origins from the user's original SWF:
-        // potions: (508,443),(552,443),(596,443)
-        // stats/options subclips: (205,206),(335,207). These subclips
-        // contain menus, so their exact clickable child bounds can vary.
-        // Retain an upper strip for the HUD's other in-arena icons.
+        if (gx < 0 || gx > 640 || gy < 0 || gy > 480) return 0;
+
+        // Keep known working clickable regions unchanged in this build.
         boolean topHud = gy <= 102f;
         boolean statOrOptions = gy >= 171f && gy <= 244f &&
             ((gx >= 169f && gx <= 241f) ||
@@ -311,28 +310,37 @@ final class GamepadBridge {
             (Math.abs(gx - 508f) <= 29f ||
              Math.abs(gx - 552f) <= 29f ||
              Math.abs(gx - 596f) <= 29f);
-        boolean hit = topHud || statOrOptions || potionHud;
-        Log.d("ArcaneHUD", "arena touch=(" + x + "," + y +
-            ") stage=(" + gx + "," + gy + ") hit=" + hit +
-            " top=" + topHud + " statsOptions=" + statOrOptions +
-            " potions=" + potionHud);
-        return hit;
+
+        int region;
+        if (topHud || statOrOptions || potionHud) region = 1;
+        else {
+            // A small non-interactive margin prevents a near miss from
+            // becoming an unintended swipe, attack or facing change.
+            boolean topMargin = gy > 102f && gy <= 118f;
+            boolean statsMargin = gy >= 155f && gy <= 260f &&
+                ((gx >= 153f && gx <= 257f) ||
+                 (gx >= 283f && gx <= 387f));
+            boolean potionMargin = gy >= 388f && gx >= 454f;
+            region = topMargin || statsMargin || potionMargin ? 2 : 0;
+        }
+        Log.d("ArcaneHUD", "touch stage=(" + gx + "," + gy +
+            ") region=" + region);
+        return region;
     }
 
-    // HUD input is delivered as DOM pointer events on the Ruffle canvas.
-    // Native synthetic WebView touches were reaching pointerdown but never
-    // activating the Flash potion/options/stats clips.
+    boolean isCombatHudTouch(float x, float y) {
+        return combatHudRegion(x, y) == 1;
+    }
+
+    boolean isCombatHudGuardTouch(float x, float y) {
+        return combatHudRegion(x, y) != 0;
+    }
+
+    // HUD selection is a click, not an attack-sized held mouse press.
+    // Sending DOWN and UP together on finger release lets Flash buttons
+    // receive a click without leaving mouseIsDown true for game ticks.
     private boolean hudTouchActive;
     private float hudLastX, hudLastY;
-
-    private void dispatchHud(String type, float x, float y) {
-        if (webView.getWidth() < 1 || webView.getHeight() < 1) return;
-        float nx = x / webView.getWidth();
-        float ny = y / webView.getHeight();
-        webView.evaluateJavascript(
-            "if(window.arcaneHudPointer)window.arcaneHudPointer('" + type +
-            "'," + nx + "," + ny + ");", null);
-    }
 
     void beginTouchHud(float x, float y) {
         if (hudTouchActive || touchTrackpadAttacking || attacking) return;
@@ -341,31 +349,26 @@ final class GamepadBridge {
         hudTouchActive = true;
         hudLastX = x;
         hudLastY = y;
-        dispatchHud("down", x, y);
     }
 
     void moveTouchHud(float x, float y) {
         if (!hudTouchActive) return;
         hudLastX = x;
         hudLastY = y;
-        dispatchHud("move", x, y);
     }
 
     void endTouchHud() {
         if (!hudTouchActive) return;
         hudTouchActive = false;
-        dispatchHud("up", hudLastX, hudLastY);
-        // Reset game-side mouse position only after its HUD mouse-up.
-        webView.postOnAnimation(() -> {
-            if (hudTouchActive || touchTrackpadAttacking || attacking ||
-                !pointerInitialized) return;
-            sendHover();
-            float nx = pointerX / Math.max(1, webView.getWidth());
-            float ny = pointerY / Math.max(1, webView.getHeight());
-            webView.evaluateJavascript(
-                "if(window.arcaneControllerAim)window.arcaneControllerAim(" +
-                nx + "," + ny + ");", null);
-        });
+        if (webView.getWidth() < 1 || webView.getHeight() < 1) return;
+        float x = hudLastX / webView.getWidth();
+        float y = hudLastY / webView.getHeight();
+        // Keep the original crosshair at its last Relative position.
+        float aimX = pointerX / webView.getWidth();
+        float aimY = pointerY / webView.getHeight();
+        webView.evaluateJavascript(
+            "if(window.arcaneHudPointer)window.arcaneHudPointer('click'," +
+            x + "," + y + "," + aimX + "," + aimY + ");", null);
     }
 
     void tapTouchDirect(float x, float y) {
