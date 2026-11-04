@@ -60,6 +60,7 @@ final class ArcaneSceneMarker {
             int pos = frameHeader;
             int frame = 1, notified = 0;
             boolean markedFrame = false;
+            boolean onEndHookInstalled = false;
             while (pos + 2 <= plain.length) {
                 int start = pos;
                 int record = ushort(plain, pos);
@@ -101,11 +102,27 @@ final class ArcaneSceneMarker {
                     frame++;
                 }
                 int end = pos + (int) length;
-                patched.write(plain, start, end - start);
+                if (tag == 12 && frame == 1) {
+                    // Inject a notification at the beginning of the game's
+                    // existing onend() function; it creates finalresults
+                    // before the root timeline moves away from the arena.
+                    byte[] hooked = addFightEndHook(plain, pos, (int) length);
+                    if (hooked != null) {
+                        writeSwfTag(patched, 12, hooked);
+                        onEndHookInstalled = true;
+                    } else {
+                        patched.write(plain, start, end - start);
+                    }
+                } else {
+                    patched.write(plain, start, end - start);
+                }
                 pos = end;
                 if (tag == 0) break;
             }
-            if (notified != 25) return original; // game-specific safety check
+            // Fail closed for a different SWF revision: the script must have
+            // exactly one known onend function or scene switching would be
+            // stuck in Relative mode on the results screen.
+            if (notified != 25 || !onEndHookInstalled) return original;
             byte[] patchedPlain = patched.toByteArray();
             writeUint(patchedPlain, 4, patchedPlain.length);
 
@@ -120,6 +137,69 @@ final class ArcaneSceneMarker {
         } catch (RuntimeException | IOException error) {
             return original; // never prevent the user's original game from loading
         }
+    }
+
+    private static byte[] addFightEndHook(byte[] movie, int offset, int size)
+            throws IOException {
+        // The original Arcane SWF stores "onend" at index 578 in its root
+        // ActionConstantPool. It assigns an anonymous DefineFunction to this
+        // variable. Match the entire short ActionPush + DefineFunction header
+        // so we cannot accidentally patch another byte sequence.
+        byte[] signature = {
+            (byte)0x96, 3, 0, 9, 0x42, 2, (byte)0x9b, 5, 0,
+            0, 0, 0
+        };
+        int index = -1, matches = 0;
+        for (int p = offset; p + signature.length + 2 < offset + size; p++) {
+            boolean same = true;
+            for (int j = 0; j < signature.length; j++) {
+                if (movie[p + j] != signature[j]) { same = false; break; }
+            }
+            if (same) { index = p; matches++; }
+        }
+        if (matches != 1) return null;
+        // After the DefineFunction record, the two-byte code size precedes
+        // its original instruction body (which is *outside* record length).
+        int sizeAt = index + signature.length;
+        int originalSize = ushort(movie, sizeAt);
+        int bodyAt = sizeAt + 2;
+        byte[] notify = actionGetURL(COMMAND, "menu");
+        if (originalSize < 20 || originalSize + notify.length > 65535 ||
+            bodyAt + originalSize > offset + size) return null;
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream(size + notify.length);
+        out.write(movie, offset, sizeAt - offset);
+        int newSize = originalSize + notify.length;
+        out.write(newSize & 255);
+        out.write((newSize >>> 8) & 255);
+        out.write(notify);
+        out.write(movie, bodyAt, offset + size - bodyAt);
+        return out.toByteArray();
+    }
+
+    private static byte[] actionGetURL(byte[] command, String phase)
+            throws IOException {
+        ByteArrayOutputStream action = new ByteArrayOutputStream();
+        int payloadLength = command.length + 1 + phase.length() + 1;
+        action.write(0x83);
+        action.write(payloadLength & 255);
+        action.write((payloadLength >>> 8) & 255);
+        action.write(command);
+        action.write(0);
+        action.write(phase.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        action.write(0);
+        return action.toByteArray(); // no ActionEnd inside a function body
+    }
+
+    private static void writeSwfTag(ByteArrayOutputStream output, int code, byte[] data)
+            throws IOException {
+        int len = data.length;
+        int header = (code << 6) | Math.min(len, 63);
+        output.write(header & 255);
+        output.write((header >>> 8) & 255);
+        if (len >= 63) for (int i = 0; i < 4; i++)
+            output.write((len >>> (8 * i)) & 255);
+        output.write(data);
     }
 
     private static boolean isArenaFrame(int frame) {
