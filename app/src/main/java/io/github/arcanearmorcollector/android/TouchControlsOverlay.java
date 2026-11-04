@@ -144,7 +144,7 @@ final class TouchControlsOverlay extends FrameLayout {
     private final class AimSurface extends View {
         // 0 = Direct (inventory/menu or user preference)
         // 1 = Relative (arena, user preference)
-        // 2 = Adaptive fallback if a local SWF does not expose scene markers.
+        // 2 = Adaptive fallback; 3 = direct HUD touch within Relative combat.
         private int gestureMode, activePointer = -1;
         private float lastX, lastY, downX, downY;
         private boolean relativeGestureStarted;
@@ -173,6 +173,7 @@ final class TouchControlsOverlay extends FrameLayout {
             removeCallbacks(holdToRelative);
             if (activePointer < 0) return;
             if (gestureMode == 0) bridge.endTouchDirect();
+            else if (gestureMode == 3) bridge.endTouchHud();
             else if (relativeGestureStarted) bridge.endTouchTrackpad();
             activePointer = -1;
             relativeGestureStarted = false;
@@ -183,16 +184,14 @@ final class TouchControlsOverlay extends FrameLayout {
             if (activePointer < 0) return;
             if (gestureMode == 0) {
                 bridge.endTouchDirect();
+            } else if (gestureMode == 3) {
+                bridge.endTouchHud();
             } else if (relativeGestureStarted) {
                 bridge.endTouchTrackpad();
             } else if (commitTap) {
-                // Only real HUD hotspots may receive screen-position clicks.
-                // Elsewhere in Relative combat, tap fires AT the existing
-                // crosshair and never changes the character's aim/facing.
-                if (gestureMode == 1 && bridge.isCombatHudTouch(x, y))
-                    bridge.tapTouchDirect(x, y);
-                else
-                    bridge.tapTouchRelative();
+                // Any short tap outside the HUD attacks at the existing
+                // Relative crosshair, never at the finger's screen position.
+                bridge.tapTouchRelative();
             }
             activePointer = -1;
             relativeGestureStarted = false;
@@ -205,9 +204,13 @@ final class TouchControlsOverlay extends FrameLayout {
                     downX = lastX = event.getX(0);
                     downY = lastY = event.getY(0);
                     gestureMode = selectMode();
+                    if (gestureMode == 1 && bridge.isCombatHudTouch(lastX, lastY))
+                        gestureMode = 3;
                     relativeGestureStarted = false;
                     if (gestureMode == 0) {
                         bridge.beginTouchDirect(lastX, lastY);
+                    } else if (gestureMode == 3) {
+                        bridge.beginTouchHud(lastX, lastY);
                     } else {
                         // Short taps fire at the existing crosshair.
                         // Swiping or holding engages relative movement/fire.
@@ -223,6 +226,8 @@ final class TouchControlsOverlay extends FrameLayout {
                             float x = event.getX(index), y = event.getY(index);
                             if (gestureMode == 0) {
                                 bridge.moveTouchDirect(x, y);
+                            } else if (gestureMode == 3) {
+                                bridge.moveTouchHud(x, y);
                             } else {
                                 if (!relativeGestureStarted &&
                                     Math.hypot(x - downX, y - downY) >= dp(11)) {
