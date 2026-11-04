@@ -521,15 +521,26 @@ public class MainActivity extends Activity {
 
     private void navigateOptions(int direction) {
         if (bindingAction >= 0) return;
-        int count = showingControls ? 11 : 3;
+        int count = showingControls ? 11 : (showingTouchControls ? 7 : 4);
         menuSelection = (menuSelection + direction + count) % count;
         updateOptionsSelection();
     }
 
     private void adjustOption(int direction) {
         if (bindingAction >= 0) return;
-        if (!showingControls && menuSelection == 1) {
+        if (!showingControls && !showingTouchControls && menuSelection == 1) {
             cycleDisplay(direction);
+        } else if (showingTouchControls) {
+            switch (menuSelection) {
+                case 1: touchMode = (touchMode + direction + 3) % 3; break;
+                case 2: touchSizeIndex = (touchSizeIndex + direction + 3) % 3; break;
+                case 3: touchOpacityIndex = (touchOpacityIndex + direction + 3) % 3; break;
+                case 4: touchSwapped = !touchSwapped; break;
+                case 5: touchInsetIndex = (touchInsetIndex + direction + 3) % 3; break;
+                default: return;
+            }
+            saveTouchPreferences();
+            renderOptions();
         } else if (showingControls && menuSelection == 8) {
             invertAimY = !invertAimY;
             setAimPreferences();
@@ -543,14 +554,19 @@ public class MainActivity extends Activity {
 
     private void activateOption() {
         if (bindingAction >= 0) return;
-        if (!showingControls) {
+        if (!showingControls && !showingTouchControls) {
             if (menuSelection == 0) closeOptions();
             else if (menuSelection == 1) cycleDisplay(1);
             else {
-                showingControls = true;
+                showingControls = menuSelection == 2;
+                showingTouchControls = menuSelection == 3;
                 menuSelection = 0;
                 renderOptions();
             }
+        } else if (showingTouchControls) {
+            if (menuSelection == 0) backOptions();
+            else if (menuSelection == 6) resetTouchPreferences();
+            else adjustOption(1);
         } else if (menuSelection == 0) {
             backOptions();
         } else if (menuSelection <= 7) {
@@ -671,7 +687,8 @@ public class MainActivity extends Activity {
             Math.min(dp(560), screenW - dp(40)),
             Math.min(dp(525), screenH - dp(38)), Gravity.CENTER);
         optionsOverlay.addView(panel, panelParams);
-        TextView heading = makeText(showingControls ? "CONTROLS" : "ARCANE  •  OPTIONS",
+        TextView heading = makeText(showingControls ? "CONTROLS" :
+            showingTouchControls ? "TOUCH CONTROLS" : "ARCANE  •  OPTIONS",
             21, 0xFFFFE0A1, 0x00000000);
         heading.setGravity(Gravity.CENTER);
         panel.addView(heading, new LinearLayout.LayoutParams(-1, dp(45)));
@@ -690,13 +707,26 @@ public class MainActivity extends Activity {
         optionsScroll = scroll;
         optionRows = rows;
         renderedControls = showingControls;
-        if (!showingControls) {
+        if (!showingControls && !showingTouchControls) {
             addOptionRow(rows, scroll, "Resume Game", "Return to game", 0);
             int mode = Math.max(0, displayModeIndex());
             addOptionRow(rows, scroll, "Display Mode: " + DISPLAY_NAMES[mode],
                 mode == 0 ? "Unstretched · side bars" :
                 "Full widescreen · stretched", 1);
             addOptionRow(rows, scroll, "Controller Settings", "Buttons and aiming", 2);
+            addOptionRow(rows, scroll, "Touchscreen Settings", "Touch sticks and buttons", 3);
+        } else if (showingTouchControls) {
+            addOptionRow(rows, scroll, "Back to Options", "", 0);
+            addOptionRow(rows, scroll, "Touch Controls: " + TOUCH_MODES[touchMode],
+                touchMode == 0 ? "Auto-hide with a controller" :
+                touchMode == 1 ? "Always show" : "Hide touch controls", 1);
+            addOptionRow(rows, scroll, "Control Size: " + TOUCH_SIZES[touchSizeIndex], "", 2);
+            addOptionRow(rows, scroll, "Opacity: " + TOUCH_OPACITIES[touchOpacityIndex], "", 3);
+            addOptionRow(rows, scroll, "Sides: " +
+                (touchSwapped ? "Swapped" : "Standard"), "", 4);
+            addOptionRow(rows, scroll, "Position: " + TOUCH_INSETS[touchInsetIndex],
+                "Distance from screen edge", 5);
+            addOptionRow(rows, scroll, "Reset Touch Controls", "Restore defaults", 6);
         } else {
             addOptionRow(rows, scroll, "Back to Options", "", 0);
             for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++) {
@@ -824,12 +854,15 @@ public class MainActivity extends Activity {
             return true;
         }
         if (optionsOpen) return handleOptionsKey(event);
+        if (isGamepadKey(event) && touchMode == 0) refreshTouchControls();
         if (gamepad != null && gamepad.handleKey(event)) return true;
         return super.dispatchKeyEvent(event);
     }
     @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
         if (optionsOpen && (event.getSource() & InputDevice.SOURCE_JOYSTICK) != 0)
             return handleOptionsMotion(event);
+        if ((event.getSource() & InputDevice.SOURCE_JOYSTICK) != 0 && touchMode == 0)
+            refreshTouchControls();
         if (gamepad != null && gamepad.handleMotion(event)) return true;
         return super.dispatchGenericMotionEvent(event);
     }
@@ -839,7 +872,9 @@ public class MainActivity extends Activity {
     }
     @Override public void onPause() {
         backgrounded = true;
+        if (touchControls != null) touchControls.releaseAll();
         if (gamepad != null) gamepad.release();
+        refreshTouchControls();
         if (gameView != null) {
             // WebView.onPause() alone doesn't pause JavaScript or Ruffle audio.
             // Suspend the SWF before pausing timers, to stop both sounds and frames.
@@ -860,6 +895,7 @@ public class MainActivity extends Activity {
     @Override public void onResume() {
         super.onResume();
         backgrounded = false;
+        refreshTouchControls();
         if (gameView != null) {
             gameView.resumeTimers();
             gameView.onResume();
