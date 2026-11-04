@@ -89,8 +89,8 @@ try {
     }
     $withCustomIcon = [regex]::Replace($currentManifest,
         'android:icon="[^"]+"', ('android:icon="' + $iconRef + '"'))
-    [System.IO.File]::WriteAllText($manifest, $withCustomIcon, (New-Object System.Text.UTF8Encoding($false)))
     $manifestReplaced = $true
+    [System.IO.File]::WriteAllText($manifest, $withCustomIcon, (New-Object System.Text.UTF8Encoding($false)))
 
     & $gradle clean assembleRelease
     if ($LASTEXITCODE -ne 0) { throw 'Release compilation failed.' }
