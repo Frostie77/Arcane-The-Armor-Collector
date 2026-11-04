@@ -256,6 +256,36 @@ final class GamepadBridge {
         updateMappedButtons();
     }
 
+    // In Direct mode, aim and attack use the actual second-finger position.
+    // This goes through the same multi-touch overlay as the virtual movement
+    // pad; dispatching a native tap only from the WebView used to lose the
+    // other finger's movement gesture.
+    void beginTouchDirect(float x, float y) {
+        initializePointer();
+        if (!pointerInitialized) return;
+        pointerX = x;
+        pointerY = y;
+        clampPointer();
+        touchAimActive = true;
+        touchAimX = touchAimY = 0f;
+        updateAimFromSources();
+        touchTrackpadAttacking = true;
+        updateMappedButtons();
+    }
+
+    void moveTouchDirect(float x, float y) {
+        if (!touchTrackpadAttacking || !pointerInitialized) return;
+        pointerX = x;
+        pointerY = y;
+        clampPointer();
+        if (attacking) sendPointer(MotionEvent.ACTION_MOVE);
+        else sendHover();
+    }
+
+    void endTouchDirect() {
+        endTouchTrackpad();
+    }
+
     void moveTouchTrackpad(float deltaX, float deltaY) {
         if (!touchTrackpadAttacking || !pointerInitialized) return;
         float gain = Math.max(0.65f, Math.min(2.5f, aimSensitivity * 1.35f));
