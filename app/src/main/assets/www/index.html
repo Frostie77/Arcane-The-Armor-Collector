@@ -266,7 +266,7 @@ window.arcaneClearMovementKeys = () => window.arcaneSetMovementMask(0);
 // Native overlay HUD touches are translated to DOM mouse-pointer events on
 // Ruffle's actual canvas. Android-synthesized WebView touches reached
 // pointerdown but did not activate Flash HUD movieclips on the Odin.
-window.arcaneHudPointer = (kind, nx, ny) => {
+window.arcaneHudPointer = (kind, nx, ny, savedAimX, savedAimY) => {
   if (!arcanePlayer || arcaneInBackground || arcaneMenuPaused) return;
   const shadow = arcanePlayer.shadowRoot;
   const canvas = shadow ? Array.from(shadow.querySelectorAll('canvas'))
@@ -308,14 +308,18 @@ window.arcaneHudPointer = (kind, nx, ny) => {
     }
     canvas.dispatchEvent(e);
   }
-  if (kind === 'down') {
+  if (kind === 'click') {
     arcanePlayer.focus();
+    // Move, press and release within one browser turn. Flash sees the HUD
+    // activation without a held mouse-down spanning combat frames.
     deliver('pointermove', 0);
     deliver('pointerdown', 1);
-  } else if (kind === 'move') {
-    deliver('pointermove', 1);
-  } else if (kind === 'up') {
     deliver('pointerup', 0);
+    // Immediately restore Flash's mouse coordinates to the Relative
+    // crosshair. Ordinary arena taps never enter this path.
+    if (Number.isFinite(Number(savedAimX)) &&
+        Number.isFinite(Number(savedAimY)))
+      window.arcaneControllerAim(Number(savedAimX), Number(savedAimY));
   }
   console.info('ArcaneHUDCanvas ' + kind + ' at (' +
     localX.toFixed(1) + ',' + localY.toFixed(1) +
