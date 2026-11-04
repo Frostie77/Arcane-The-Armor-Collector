@@ -160,7 +160,7 @@ final class TouchControlsOverlay extends FrameLayout {
         AimSurface(Context context) {
             super(context);
             setClickable(true);
-            setContentDescription("Tap to fire at crosshair; swipe or hold for relative aim");
+            setContentDescription("Tap HUD icons directly; tap elsewhere to fire at relative crosshair");
         }
 
         private int selectMode() {
@@ -186,11 +186,13 @@ final class TouchControlsOverlay extends FrameLayout {
             } else if (relativeGestureStarted) {
                 bridge.endTouchTrackpad();
             } else if (commitTap) {
-                // A short tap in Relative combat attacks at the saved
-                // crosshair, NOT at the screen position of the finger.
-                // Direct taps are only used on the genuine menu/results
-                // screens. HUD hit areas need separate calibrated regions.
-                bridge.tapTouchRelative();
+                // Only real HUD hotspots may receive screen-position clicks.
+                // Elsewhere in Relative combat, tap fires AT the existing
+                // crosshair and never changes the character's aim/facing.
+                if (gestureMode == 1 && bridge.isCombatHudTouch(x, y))
+                    bridge.tapTouchDirect(x, y);
+                else
+                    bridge.tapTouchRelative();
             }
             activePointer = -1;
             relativeGestureStarted = false;
