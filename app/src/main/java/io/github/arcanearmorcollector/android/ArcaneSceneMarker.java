@@ -24,6 +24,8 @@ final class ArcaneSceneMarker {
 
     private static final byte[] FRAME_COMMAND =
         "FSCommand:arcaneFrame".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    private static final byte[] FIGHT_END_COMMAND =
+        "FSCommand:arcaneFightEnd".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
 
     private ArcaneSceneMarker() {}
 
@@ -163,7 +165,7 @@ final class ArcaneSceneMarker {
         int sizeAt = index + signature.length;
         int originalSize = ushort(movie, sizeAt);
         int bodyAt = sizeAt + 2;
-        byte[] notify = actionGetURL(COMMAND, "menu");
+        byte[] notify = actionGetURL(FIGHT_END_COMMAND, "results");
         if (originalSize < 20 || originalSize + notify.length > 65535 ||
             bodyAt + originalSize > offset + size) return null;
 
