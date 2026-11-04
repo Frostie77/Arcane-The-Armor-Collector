@@ -294,6 +294,16 @@ window.addEventListener('DOMContentLoaded', async () => {
     // memory, without altering it on disk. Frame 20 is arena gameplay,
     // while the other main timeline frames are menus / equipment / results.
     player.onFSCommand = (command, args) => {
+      if (command === 'arcaneFightEnd') {
+        console.info('ArcaneFightEnd: post-fight Continue/Retry screen');
+        try {
+          if (window.ArcaneHost && typeof window.ArcaneHost.reportPhase === 'function')
+            window.ArcaneHost.reportPhase('menu');
+        } catch (error) {
+          console.warn('ArcaneFightEnd report error', error);
+        }
+        return;
+      }
       if (command === 'arcaneFrame') {
         console.info('ArcaneRootFrame ' + String(args));
         return;
