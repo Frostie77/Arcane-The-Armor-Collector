@@ -927,13 +927,6 @@ public class MainActivity extends Activity {
             dp(39), dp(39), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         header.addView(close, closeParams);
 
-        String hint = bindingAction >= 0
-            ? "Press a controller button · B: Cancel"
-            : "D-pad / Stick: Move · A: Select · L1/R1: Tabs · B: Back · Start: Close";
-        TextView help = makeText(hint, 11, 0xFFDDD2BF, 0x00000000);
-        help.setGravity(Gravity.CENTER);
-        panel.addView(help, new LinearLayout.LayoutParams(-1, dp(23)));
-
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
         panel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
