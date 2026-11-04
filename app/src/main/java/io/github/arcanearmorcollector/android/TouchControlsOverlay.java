@@ -195,17 +195,41 @@ final class TouchControlsOverlay extends FrameLayout {
         }
     }
 
+    // Touches that land just OUTSIDE a virtual button must not become
+    // accidental Relative swipes/attacks. The actual button View keeps
+    // receiving touches inside its bounds; this check runs only when a
+    // gesture fell through to the full-screen AimSurface underneath.
+    private boolean inPaddedBounds(View view, float x, float y, int marginDp) {
+        if (view == null || view.getWidth() <= 0 || view.getHeight() <= 0) return false;
+        int gap = dp(marginDp);
+        return x >= view.getLeft() - gap && x <= view.getRight() + gap &&
+            y >= view.getTop() - gap && y <= view.getBottom() + gap;
+    }
+
+    private boolean shouldIgnoreAimAroundControls(float x, float y) {
+        if (!relativeAim || !gamePhaseKnown || !gameArena) return false;
+        if (useDpad && inPaddedBounds(directionPad, x, y, 42)) return true;
+        if (!useDpad && inPaddedBounds(movePad, x, y, 30)) return true;
+        if (buttons != null) {
+            for (ActionButton button : buttons) {
+                if (inPaddedBounds(button, x, y, 16)) return true;
+            }
+        }
+        return bridge.isCombatHudGuardTouch(x, y);
+    }
+
     private final class AimSurface extends View {
         // 0 = Direct (inventory/menu or user preference)
         // 1 = Relative (arena, user preference)
-        // 2 = Adaptive fallback; 3 = direct HUD touch within Relative combat.
+        // 2 = fallback; 3 = HUD; 4 = inert guard outside virtual buttons.
         private int gestureMode, activePointer = -1;
         private float lastX, lastY, downX, downY;
         private boolean relativeGestureStarted;
         private static final long HOLD_TO_RELATIVE_MS = 170L;
 
         private final Runnable holdToRelative = () -> {
-            if (activePointer != -1 && gestureMode != 0 && !relativeGestureStarted) {
+            if (activePointer != -1 && (gestureMode == 1 || gestureMode == 2) &&
+                !relativeGestureStarted) {
                 relativeGestureStarted = true;
                 bridge.beginTouchTrackpad();
             }
@@ -242,7 +266,7 @@ final class TouchControlsOverlay extends FrameLayout {
                 bridge.endTouchHud();
             } else if (relativeGestureStarted) {
                 bridge.endTouchTrackpad();
-            } else if (commitTap) {
+            } else if (commitTap && gestureMode != 4) {
                 // Any short tap outside the HUD attacks at the existing
                 // Relative crosshair, never at the finger's screen position.
                 bridge.tapTouchRelative();
@@ -260,11 +284,17 @@ final class TouchControlsOverlay extends FrameLayout {
                     gestureMode = selectMode();
                     if (gestureMode == 1 && bridge.isCombatHudTouch(lastX, lastY))
                         gestureMode = 3;
+                    else if (gestureMode == 1 &&
+                             shouldIgnoreAimAroundControls(lastX, lastY))
+                        gestureMode = 4;
                     relativeGestureStarted = false;
                     if (gestureMode == 0) {
                         bridge.beginTouchDirect(lastX, lastY);
                     } else if (gestureMode == 3) {
                         bridge.beginTouchHud(lastX, lastY);
+                    } else if (gestureMode == 4) {
+                        // Absorb this entire gesture without aiming, firing,
+                        // or emitting any phantom movement input.
                     } else {
                         // Short taps fire at the existing crosshair.
                         // Swiping or holding engages relative movement/fire.
@@ -282,6 +312,9 @@ final class TouchControlsOverlay extends FrameLayout {
                                 bridge.moveTouchDirect(x, y);
                             } else if (gestureMode == 3) {
                                 bridge.moveTouchHud(x, y);
+                            } else if (gestureMode == 4) {
+                                // A touch that began in a guard band must not
+                                // turn into aiming when it slides out.
                             } else {
                                 if (!relativeGestureStarted &&
                                     Math.hypot(x - downX, y - downY) >= dp(11)) {
