@@ -41,9 +41,9 @@ public class MainActivity extends Activity {
     private TouchControlsOverlay touchControls;
     private ScrollView optionsScroll;
     private LinearLayout optionRows;
-    private boolean renderedControls, renderedTouchControls;
+    private boolean renderedControls, renderedTouchControls, renderedMovementControls;
     private View floatingOptionsButton;
-    private boolean optionsOpen, showingControls, showingTouchControls;
+    private boolean optionsOpen, showingControls, showingTouchControls, showingMovementControls;
     private FrameLayout unmappedWarningLayer;
     private TextView warningKeepEditing, warningContinue;
     private int warningSelection;
@@ -54,6 +54,11 @@ public class MainActivity extends Activity {
     private int aimSpeedIndex = 1;
     private int touchMode, touchSizeIndex = 1, touchOpacityIndex = 1, touchInsetIndex = 1;
     private boolean touchSwapped;
+    private int movementMode, movementDeadzoneIndex = 1;
+    private boolean invertMoveX, invertMoveY;
+    private static final String[] MOVEMENT_MODES = {"8-way", "4-way"};
+    private static final String[] DEADZONE_NAMES = {"Low", "Normal", "High"};
+    private static final float[] DEADZONE_VALUES = {0.30f, 0.38f, 0.48f};
     private static final String[] TOUCH_MODES = {"Auto", "On", "Off"};
     private static final String[] TOUCH_SIZES = {"Small", "Medium", "Large"};
     private static final float[] TOUCH_SIZE_VALUES = {0.8f, 1.0f, 1.15f};
@@ -85,6 +90,10 @@ public class MainActivity extends Activity {
         touchOpacityIndex = Math.max(0, Math.min(2, prefs.getInt("touch_opacity", 1)));
         touchInsetIndex = Math.max(0, Math.min(2, prefs.getInt("touch_inset", 1)));
         touchSwapped = prefs.getBoolean("touch_swap", false);
+        movementMode = Math.max(0, Math.min(1, prefs.getInt("movement_mode", 0)));
+        movementDeadzoneIndex = Math.max(0, Math.min(2, prefs.getInt("movement_deadzone", 1)));
+        invertMoveX = prefs.getBoolean("invert_move_x", false);
+        invertMoveY = prefs.getBoolean("invert_move_y", false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setImmersive();
 
@@ -147,6 +156,8 @@ public class MainActivity extends Activity {
         gamepad = new GamepadBridge(this, gameView);
         gamepad.setDisplayMode(displayMode);
         gamepad.setAimOptions(invertAimY, AIM_SPEEDS[aimSpeedIndex]);
+        gamepad.setMovementOptions(movementMode, DEADZONE_VALUES[movementDeadzoneIndex],
+            invertMoveX, invertMoveY);
         for (int action = 0; action < GamepadBridge.ACTION_NAMES.length; action++) {
             gamepad.setButton(action, prefs.getInt(
                 "button_" + action, GamepadBridge.defaultButton(action)));
@@ -269,6 +280,24 @@ public class MainActivity extends Activity {
         if (visible) gamepad.showTouchCursor();
     }
 
+    private void saveMovementPreferences() {
+        getPreferences(MODE_PRIVATE).edit()
+            .putInt("movement_mode", movementMode)
+            .putInt("movement_deadzone", movementDeadzoneIndex)
+            .putBoolean("invert_move_x", invertMoveX)
+            .putBoolean("invert_move_y", invertMoveY).apply();
+        gamepad.setMovementOptions(movementMode, DEADZONE_VALUES[movementDeadzoneIndex],
+            invertMoveX, invertMoveY);
+    }
+
+    private void resetMovementPreferences() {
+        movementMode = 0;
+        movementDeadzoneIndex = 1;
+        invertMoveX = invertMoveY = false;
+        saveMovementPreferences();
+        refreshSettingRows();
+    }
+
     private void saveTouchPreferences() {
         getPreferences(MODE_PRIVATE).edit()
             .putInt("touch_mode", touchMode)
@@ -329,6 +358,7 @@ public class MainActivity extends Activity {
         optionsOpen = true;
         showingControls = false;
         showingTouchControls = false;
+        showingMovementControls = false;
         refreshTouchControls();
         menuSelection = 0;
         menuAxisLatch = 0;
@@ -379,6 +409,9 @@ public class MainActivity extends Activity {
         } else if (showingTouchControls) {
             showingTouchControls = false;
             menuSelection = 3;
+        } else if (showingMovementControls) {
+            showingMovementControls = false;
+            menuSelection = 4;
         } else {
             closeOptions();
             return;
@@ -521,7 +554,8 @@ public class MainActivity extends Activity {
 
     private void navigateOptions(int direction) {
         if (bindingAction >= 0) return;
-        int count = showingControls ? 11 : (showingTouchControls ? 7 : 4);
+        int count = showingControls ? 11 : (showingTouchControls ? 7 :
+            (showingMovementControls ? 6 : 5));
         menuSelection = (menuSelection + direction + count) % count;
         updateOptionsSelection();
     }
@@ -530,6 +564,16 @@ public class MainActivity extends Activity {
         if (bindingAction >= 0) return;
         if (!showingControls && !showingTouchControls && menuSelection == 1) {
             cycleDisplay(direction);
+        } else if (showingMovementControls) {
+            switch (menuSelection) {
+                case 1: movementMode = (movementMode + direction + 2) % 2; break;
+                case 2: movementDeadzoneIndex = (movementDeadzoneIndex + direction + 3) % 3; break;
+                case 3: invertMoveX = !invertMoveX; break;
+                case 4: invertMoveY = !invertMoveY; break;
+                default: return;
+            }
+            saveMovementPreferences();
+            refreshSettingRows();
         } else if (showingTouchControls) {
             switch (menuSelection) {
                 case 1: touchMode = (touchMode + direction + 3) % 3; break;
@@ -540,32 +584,37 @@ public class MainActivity extends Activity {
                 default: return;
             }
             saveTouchPreferences();
-            renderOptions();
+            refreshSettingRows();
         } else if (showingControls && menuSelection == 8) {
             invertAimY = !invertAimY;
             setAimPreferences();
-            renderOptions();
+            refreshSettingRows();
         } else if (showingControls && menuSelection == 9) {
             aimSpeedIndex = (aimSpeedIndex + direction + AIM_SPEEDS.length) % AIM_SPEEDS.length;
             setAimPreferences();
-            renderOptions();
+            refreshSettingRows();
         }
     }
 
     private void activateOption() {
         if (bindingAction >= 0) return;
-        if (!showingControls && !showingTouchControls) {
+        if (!showingControls && !showingTouchControls && !showingMovementControls) {
             if (menuSelection == 0) closeOptions();
             else if (menuSelection == 1) cycleDisplay(1);
             else {
                 showingControls = menuSelection == 2;
                 showingTouchControls = menuSelection == 3;
+                showingMovementControls = menuSelection == 4;
                 menuSelection = 0;
                 renderOptions();
             }
         } else if (showingTouchControls) {
             if (menuSelection == 0) backOptions();
             else if (menuSelection == 6) resetTouchPreferences();
+            else adjustOption(1);
+        } else if (showingMovementControls) {
+            if (menuSelection == 0) backOptions();
+            else if (menuSelection == 5) resetMovementPreferences();
             else adjustOption(1);
         } else if (menuSelection == 0) {
             backOptions();
