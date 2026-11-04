@@ -42,6 +42,7 @@ public class MainActivity extends Activity {
     private ScrollView optionsScroll;
     private LinearLayout optionRows;
     private boolean renderedControls, renderedTouchControls, renderedMovementControls;
+    private int renderedOptionsTab = -1;
     private View floatingOptionsButton;
     private boolean optionsOpen, showingControls, showingTouchControls, showingMovementControls;
     private FrameLayout unmappedWarningLayer;
@@ -219,6 +220,30 @@ public class MainActivity extends Activity {
                 float y = cy + i * spacing;
                 canvas.drawLine(cx - halfWidth, y, cx + halfWidth, y, lines);
             }
+        }
+    }
+
+    private final class CloseIconView extends View {
+        private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        CloseIconView() {
+            super(MainActivity.this);
+            setBackground(roundedBackground(0xFF3B2939, 0xFFBA986A, 9));
+            setClickable(true);
+            setContentDescription("Close FrostFrontend and resume game");
+            stroke.setColor(0xFFFFE0A1);
+            stroke.setStrokeWidth(dp(2.5f));
+            stroke.setStrokeCap(Paint.Cap.ROUND);
+            stroke.setStyle(Paint.Style.STROKE);
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float cx = getWidth() * 0.5f;
+            float cy = getHeight() * 0.5f;
+            float d = dp(7);
+            canvas.drawLine(cx - d, cy - d, cx + d, cy + d, stroke);
+            canvas.drawLine(cx - d, cy + d, cx + d, cy - d, stroke);
         }
     }
 
@@ -800,35 +825,71 @@ public class MainActivity extends Activity {
 
     private void renderOptions() {
         if (!optionsOpen || optionsOverlay == null) return;
-        // Retain the current scroll offset when a setting changes. A tab
-        // switch starts at the top instead of jumping to the old tab's offset.
+        // Preserve scrolling only within the same page. Changing a setting
+        // updates its existing row directly, so the menu never bounces.
         int restoreY = optionsScroll != null && renderedControls == showingControls &&
             renderedTouchControls == showingTouchControls &&
-            renderedMovementControls == showingMovementControls ?
-            optionsScroll.getScrollY() : 0;
+            renderedMovementControls == showingMovementControls &&
+            renderedOptionsTab == optionsTab ? optionsScroll.getScrollY() : 0;
+
         optionsOverlay.removeAllViews();
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(22), dp(18), dp(22), dp(18));
+        panel.setPadding(dp(20), dp(14), dp(20), dp(16));
         panel.setBackground(roundedBackground(0xF5221A2B, 0xFFC09A62, 16));
+
         int screenW = getResources().getDisplayMetrics().widthPixels;
         int screenH = getResources().getDisplayMetrics().heightPixels;
         FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
-            Math.min(dp(560), screenW - dp(40)),
-            Math.min(dp(525), screenH - dp(38)), Gravity.CENTER);
+            Math.max(1, Math.min(dp(820), screenW - dp(52))),
+            Math.max(1, Math.min(dp(600), screenH - dp(44))), Gravity.CENTER);
         optionsOverlay.addView(panel, panelParams);
-        TextView heading = makeText(showingControls ? "CONTROLS" :
-            showingTouchControls ? "TOUCH CONTROLS" :
-            showingMovementControls ? "MOVEMENT" : "ARCANE  •  OPTIONS",
-            21, 0xFFFFE0A1, 0x00000000);
-        heading.setGravity(Gravity.CENTER);
-        panel.addView(heading, new LinearLayout.LayoutParams(-1, dp(45)));
-        TextView help = makeText(bindingAction >= 0
-                ? "Press a button · B: Cancel · Start: Resume"
-                : "Stick/D-pad: Move · A: Select · B: Back · Start: Resume",
-            11, 0xFFDDD2BF, 0x00000000);
+
+        // Persistent header: the close control replaces "Resume Game".
+        FrameLayout header = new FrameLayout(this);
+        panel.addView(header, new LinearLayout.LayoutParams(-1, dp(49)));
+        TextView title = makeText("FROSTFRONTEND", 22, 0xFFFFE0A1, 0x00000000);
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout.LayoutParams titleParams = new FrameLayout.LayoutParams(
+            -1, -1, Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        titleParams.rightMargin = dp(55);
+        header.addView(title, titleParams);
+        CloseIconView close = new CloseIconView();
+        close.setOnClickListener(v -> requestOptionsClose());
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
+            dp(39), dp(39), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        header.addView(close, closeParams);
+
+        // Same three tabs on every page; controller L1/R1 switches tabs.
+        LinearLayout tabs = new LinearLayout(this);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams tabsParams = new LinearLayout.LayoutParams(-1, dp(46));
+        tabsParams.bottomMargin = dp(4);
+        panel.addView(tabs, tabsParams);
+        String[] tabNames = {"Graphics", "Controls", "Touch Settings"};
+        for (int i = 0; i < tabNames.length; i++) {
+            final int tabIndex = i;
+            boolean selected = optionsTab == i;
+            TextView tab = makeText(tabNames[i], 14,
+                selected ? 0xFFFFDFA2 : 0xFFDDD6E0,
+                selected ? 0xFF433147 : 0xFF2B2432);
+            tab.setGravity(Gravity.CENTER);
+            tab.setPadding(dp(5), dp(5), dp(5), dp(5));
+            tab.setBackground(roundedBackground(selected ? 0xFF433147 : 0xFF2B2432,
+                selected ? 0xFFD0AA69 : 0xFF564761, 9));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, 1f);
+            if (i > 0) lp.leftMargin = dp(8);
+            tabs.addView(tab, lp);
+            tab.setOnClickListener(v -> selectOptionsTab(tabIndex));
+        }
+
+        String hint = bindingAction >= 0
+            ? "Press a controller button · B: Cancel"
+            : "D-pad / Stick: Move · A: Select · L1/R1: Tabs · B: Back · Start: Close";
+        TextView help = makeText(hint, 11, 0xFFDDD2BF, 0x00000000);
         help.setGravity(Gravity.CENTER);
-        panel.addView(help, new LinearLayout.LayoutParams(-1, dp(42)));
+        panel.addView(help, new LinearLayout.LayoutParams(-1, dp(34)));
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
         panel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -840,40 +901,10 @@ public class MainActivity extends Activity {
         renderedControls = showingControls;
         renderedTouchControls = showingTouchControls;
         renderedMovementControls = showingMovementControls;
-        if (!showingControls && !showingTouchControls && !showingMovementControls) {
-            addOptionRow(rows, scroll, "Resume Game", "Return to game", 0);
-            int mode = Math.max(0, displayModeIndex());
-            addOptionRow(rows, scroll, "Display Mode: " + DISPLAY_NAMES[mode],
-                mode == 0 ? "Unstretched · side bars" :
-                "Full widescreen · stretched", 1);
-            addOptionRow(rows, scroll, "Controller Settings", "Buttons and aiming", 2);
-            addOptionRow(rows, scroll, "Touchscreen Settings", "Touch stick and actions", 3);
-            addOptionRow(rows, scroll, "Movement Settings", "Sticks → WASD · deadzone", 4);
-        } else if (showingMovementControls) {
-            addOptionRow(rows, scroll, "Back to Options", "", 0);
-            addOptionRow(rows, scroll, "Stick Directions: " + MOVEMENT_MODES[movementMode],
-                "WASD · D-pad unchanged", 1);
-            addOptionRow(rows, scroll, "Stick Deadzone: " + DEADZONE_NAMES[movementDeadzoneIndex],
-                "Physical + touch sticks", 2);
-            addOptionRow(rows, scroll, "Invert Movement X: " +
-                (invertMoveX ? "On" : "Off"), "", 3);
-            addOptionRow(rows, scroll, "Invert Movement Y: " +
-                (invertMoveY ? "On" : "Off"), "", 4);
-            addOptionRow(rows, scroll, "Reset Movement Settings", "Restore defaults", 5);
-        } else if (showingTouchControls) {
-            addOptionRow(rows, scroll, "Back to Options", "", 0);
-            addOptionRow(rows, scroll, "Touch Controls: " + TOUCH_MODES[touchMode],
-                touchMode == 0 ? "Auto-hide with controller" :
-                touchMode == 1 ? "Always show" : "Hidden", 1);
-            addOptionRow(rows, scroll, "Control Size: " + TOUCH_SIZES[touchSizeIndex], "", 2);
-            addOptionRow(rows, scroll, "Opacity: " + TOUCH_OPACITIES[touchOpacityIndex], "", 3);
-            addOptionRow(rows, scroll, "Sides: " +
-                (touchSwapped ? "Swapped" : "Standard"), "", 4);
-            addOptionRow(rows, scroll, "Position: " + TOUCH_INSETS[touchInsetIndex],
-                "Distance from edge", 5);
-            addOptionRow(rows, scroll, "Reset Touch Controls", "Restore defaults", 6);
-        } else {
-            addOptionRow(rows, scroll, "Back to Options", "", 0);
+        renderedOptionsTab = optionsTab;
+
+        if (showingControls) {
+            addOptionRow(rows, scroll, "Back to Controls", "", 0);
             for (int i = 0; i < GamepadBridge.ACTION_NAMES.length; i++) {
                 boolean unmapped = gamepad.getButton(i) == GamepadBridge.UNMAPPED;
                 addOptionRow(rows, scroll,
@@ -887,15 +918,44 @@ public class MainActivity extends Activity {
             addOptionRow(rows, scroll, "Aim Sensitivity: " +
                 AIM_SPEEDS[aimSpeedIndex] + "×", "Right-stick speed", 9);
             addOptionRow(rows, scroll, "Restore Default Controls", "Restore original mappings", 10);
+        } else if (showingMovementControls) {
+            addOptionRow(rows, scroll, "Back to Controls", "", 0);
+            addOptionRow(rows, scroll, "Stick Directions: " + MOVEMENT_MODES[movementMode],
+                "WASD · D-pad unchanged", 1);
+            addOptionRow(rows, scroll, "Stick Deadzone: " + DEADZONE_NAMES[movementDeadzoneIndex],
+                "Physical + touch sticks", 2);
+            addOptionRow(rows, scroll, "Invert Movement X: " +
+                (invertMoveX ? "On" : "Off"), "", 3);
+            addOptionRow(rows, scroll, "Invert Movement Y: " +
+                (invertMoveY ? "On" : "Off"), "", 4);
+            addOptionRow(rows, scroll, "Reset Movement Settings", "Restore defaults", 5);
+        } else if (showingTouchControls) {
+            addOptionRow(rows, scroll, "Touch Controls: " + TOUCH_MODES[touchMode],
+                touchMode == 0 ? "Auto-hide with controller" :
+                touchMode == 1 ? "Always show" : "Hidden", 0);
+            addOptionRow(rows, scroll, "Control Size: " + TOUCH_SIZES[touchSizeIndex], "", 1);
+            addOptionRow(rows, scroll, "Opacity: " + TOUCH_OPACITIES[touchOpacityIndex], "", 2);
+            addOptionRow(rows, scroll, "Sides: " +
+                (touchSwapped ? "Swapped" : "Standard"), "", 3);
+            addOptionRow(rows, scroll, "Position: " + TOUCH_INSETS[touchInsetIndex],
+                "Distance from edge", 4);
+            addOptionRow(rows, scroll, "Reset Touch Controls", "Restore defaults", 5);
+        } else if (optionsTab == 1) {
+            addOptionRow(rows, scroll, "Button Mapping", "Assign controller buttons", 0);
+            addOptionRow(rows, scroll, "Movement Settings", "Stick directions, deadzone and inversion", 1);
+        } else {
+            int mode = Math.max(0, displayModeIndex());
+            addOptionRow(rows, scroll, "Display Mode: " + DISPLAY_NAMES[mode],
+                mode == 0 ? "Unstretched · side bars" :
+                "Full widescreen · stretched", 0);
         }
+
         if (bindingAction >= 0) {
             TextView prompt = makeText("WAITING FOR BUTTON…", 14, 0xFFFFE6AD, 0xFF48323F);
             prompt.setGravity(Gravity.CENTER);
             panel.addView(prompt, new LinearLayout.LayoutParams(-1, dp(38)));
         }
         updateOptionsSelection();
-        // Layout is asynchronous. Restore scroll only once after rebuilding,
-        // then adjust just enough to reveal the selected row if needed.
         scroll.post(() -> {
             if (!optionsOpen || optionsScroll != scroll) return;
             scroll.scrollTo(0, restoreY);
