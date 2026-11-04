@@ -357,6 +357,12 @@ final class GamepadBridge {
         hudLastY = y;
     }
 
+    void cancelTouchHud() {
+        // Scene changes, Android pause and CANCEL must not activate a HUD
+        // button when no complete tap occurred.
+        hudTouchActive = false;
+    }
+
     void endTouchHud() {
         if (!hudTouchActive) return;
         hudTouchActive = false;
