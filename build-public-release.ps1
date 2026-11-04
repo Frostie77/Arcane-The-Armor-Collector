@@ -155,14 +155,25 @@ if ($certSha256 -ne $expectedSigner) {
     throw 'CRITICAL: Signing certificate differs from the published v0.2.0. Candidate deleted.'
 }
 Confirm-GameFree $signed
-$badging = @(& $aapt dump badging $signed)
-if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the compiled launcher icon.' }
-$iconBadging = ($badging | Where-Object { $_ -match '^application(?:-icon.*)?: ' }) -join [Environment]::NewLine
-$expectedIconName = [regex]::Escape($iconName)
-if ($iconBadging -notmatch "(?i)$expectedIconName\.(?:png|webp|xml)") {
-    throw "Signed APK does not contain the correct custom icon: $iconRef"
+# Android may rename compiled PNG paths. Verify the manifest resource ID
+# resolves to the requested mipmap/drawable name in resources.arsc instead.
+$xmlDump = @(& $aapt dump xmltree $signed 'AndroidManifest.xml')
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect compiled AndroidManifest.xml.' }
+$iconIdMatch = [regex]::Match(($xmlDump -join [Environment]::NewLine),
+    'android:icon\(0x01010002\)=@0x([0-9a-fA-F]{8})')
+if (-not $iconIdMatch.Success) { throw 'Compiled manifest has no Android launcher icon reference.' }
+$iconId = $iconIdMatch.Groups[1].Value
+$resourcesDump = @(& $aapt dump resources $signed)
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect APK compiled resource table.' }
+$resourceNamePattern = [regex]::Escape($iconType + '/' + $iconName) + '(?=[:\s]|$)'
+$matchingIconResources = @($resourcesDump | Where-Object {
+    $_ -match "^\s*(?:spec\s+)?resource\s+0x$iconId\b" -and
+    $_ -match $resourceNamePattern
+})
+if ($matchingIconResources.Count -eq 0) {
+    throw "Manifest icon @0x$iconId does not resolve to expected custom $iconRef."
 }
-Write-Host "PASS: custom launcher icon verified in signed APK: $iconRef"
+Write-Host "PASS: manifest icon @0x$iconId resolves to custom resource $iconRef"
 Remove-Item $aligned -Force
 $hash = (Get-FileHash -Algorithm SHA256 $signed).Hash.ToLowerInvariant()
 Set-Content -Path (Join-Path $releaseDir 'Arcane-v0.2.1-Android.sha256.txt') -Value "$hash  Arcane-v0.2.1-Android.apk"
