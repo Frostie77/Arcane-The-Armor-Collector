@@ -1,5 +1,6 @@
 # Local extracted user-provided game content (not for public redistribution)
 app/src/main/assets/www/arcane.swf
+app/src/main/assets/www/*.swf
 # Temporary local backup while building game-free test/release APKs
 .private-game/
 # Locally signed public APKs, never source control
