@@ -1,0 +1,39 @@
+# Arcane: The Armor Collector - Android v0.2.0
+
+> Draft release notes. Publish after the game-free import test and signed APK verification pass.
+
+An unofficial Android wrapper for the original Flash game, built with Ruffle and Android WebView. Not affiliated with the original game's creators or the Ruffle project.
+
+## What's included
+
+- Native Android landscape gameplay, with offline Ruffle playback.
+- AYN Odin 2 Portal gamepad controls and configurable button mapping.
+- Touchscreen joystick or D-pad, Relative/Direct aiming and touch action controls.
+- Tap access to the game's potion, stats and options HUD without unintended aiming.
+- FrostFrontend settings: Graphics, Controls, Touch Settings and a compact menu layout.
+- Original 4:3 or Stretch to Screen display.
+- Persistent settings and Arcane8 Flash save data.
+- Native speaker check (Left / Right / Both) for troubleshooting.
+- Original, game-free shield launcher icon.
+
+## First launch: import your own game file
+
+**This APK does not contain the original game.** Copy your legally obtained Arcane: The Armor Collector Flash `.swf` file onto your Android device. Start the APK, select **Select Game File**, and choose the file using Android's document picker. The app copies it into its private storage. You only need to import it once.
+
+No internet permission or full-storage permission is requested.
+
+## Known issues
+
+Intermittent distorted/one-sided game sound was previously observed on one Odin 2 Portal. The cause has not yet been isolated; it could involve the Ruffle-to-WebView-to-Android audio path. A native stereo speaker diagnostic is included.
+
+## Existing private Debug users
+
+Release signing differs from Android Debug signing. **Do not uninstall your existing Debug app to install this release without making a plan for your saved progress.** The separate `.importtest` build can test the file-import process without touching your existing app or saves.
+
+## Distribution and attribution
+
+The original SWF, game artwork and other game-owned assets are **not** part of this download. Supply your own lawfully obtained game file.
+
+Ruffle: https://ruffle.rs - used under its published MIT/Apache-2.0 licensing terms. Preserve the upstream license files and notices when redistributing its runtime.
+
+This project is unofficial and provided without any affiliation or endorsement by the original game's rights holders.
