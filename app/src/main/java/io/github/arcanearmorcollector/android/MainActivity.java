@@ -265,7 +265,7 @@ public class MainActivity extends Activity {
         panel.addView(heading, new LinearLayout.LayoutParams(-1, -2));
 
         TextView detail = new TextView(this);
-        detail.setText("Game file required\\n\\nThis unofficial Android wrapper does not include the original Flash game. Choose your own legally obtained Arcane .swf file. It will be copied into this app's private storage and kept for future launches.");
+        detail.setText("Game file required\n\nThis unofficial Android wrapper does not include the original Flash game. Choose your own legally obtained Arcane .swf file. It will be copied into this app's private storage and kept for future launches.");
         detail.setTextSize(15);
         detail.setTextColor(0xFFECE7EF);
         detail.setGravity(Gravity.CENTER);
