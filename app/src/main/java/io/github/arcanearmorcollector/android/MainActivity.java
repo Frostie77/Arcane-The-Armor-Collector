@@ -686,22 +686,22 @@ public class MainActivity extends Activity {
             updateSettingRow(3, "Invert Movement X: " + (invertMoveX ? "On" : "Off"), "");
             updateSettingRow(4, "Invert Movement Y: " + (invertMoveY ? "On" : "Off"), "");
         } else if (showingTouchControls) {
-            updateSettingRow(1, "Touch Controls: " + TOUCH_MODES[touchMode],
+            updateSettingRow(0, "Touch Controls: " + TOUCH_MODES[touchMode],
                 touchMode == 0 ? "Auto-hide with controller" :
                 touchMode == 1 ? "Always show" : "Hidden");
-            updateSettingRow(2, "Control Size: " + TOUCH_SIZES[touchSizeIndex], "");
-            updateSettingRow(3, "Opacity: " + TOUCH_OPACITIES[touchOpacityIndex], "");
-            updateSettingRow(4, "Sides: " + (touchSwapped ? "Swapped" : "Standard"), "");
-            updateSettingRow(5, "Position: " + TOUCH_INSETS[touchInsetIndex],
+            updateSettingRow(1, "Control Size: " + TOUCH_SIZES[touchSizeIndex], "");
+            updateSettingRow(2, "Opacity: " + TOUCH_OPACITIES[touchOpacityIndex], "");
+            updateSettingRow(3, "Sides: " + (touchSwapped ? "Swapped" : "Standard"), "");
+            updateSettingRow(4, "Position: " + TOUCH_INSETS[touchInsetIndex],
                 "Distance from edge");
         } else if (showingControls) {
             updateSettingRow(8, "Invert Right-Stick Y: " +
                 (invertAimY ? "On" : "Off"), "Flip vertical aim");
             updateSettingRow(9, "Aim Sensitivity: " + AIM_SPEEDS[aimSpeedIndex] + "×",
                 "Right-stick speed");
-        } else {
+        } else if (optionsTab == 0) {
             int mode = Math.max(0, displayModeIndex());
-            updateSettingRow(1, "Display Mode: " + DISPLAY_NAMES[mode],
+            updateSettingRow(0, "Display Mode: " + DISPLAY_NAMES[mode],
                 mode == 0 ? "Unstretched · side bars" : "Full widescreen · stretched");
         }
         // Never recreate the panel or animate ScrollView when a value changes.
