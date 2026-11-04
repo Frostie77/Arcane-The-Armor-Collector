@@ -162,6 +162,12 @@ final class TouchControlsOverlay extends FrameLayout {
         void reset() {
             if (pointer < 0) return;
             pointer = -1;
+            bridge.cancelTouchHud();
+        }
+
+        private void commitTap() {
+            if (pointer < 0) return;
+            pointer = -1;
             bridge.endTouchHud();
         }
 
@@ -183,9 +189,12 @@ final class TouchControlsOverlay extends FrameLayout {
                     }
                     return false;
                 case MotionEvent.ACTION_POINTER_UP:
-                    if (pointer == event.getPointerId(event.getActionIndex())) reset();
+                    if (pointer == event.getPointerId(event.getActionIndex()))
+                        commitTap();
                     return true;
                 case MotionEvent.ACTION_UP:
+                    commitTap();
+                    return true;
                 case MotionEvent.ACTION_CANCEL:
                     reset();
                     return true;
@@ -251,7 +260,7 @@ final class TouchControlsOverlay extends FrameLayout {
             removeCallbacks(holdToRelative);
             if (activePointer < 0) return;
             if (gestureMode == 0) bridge.endTouchDirect();
-            else if (gestureMode == 3) bridge.endTouchHud();
+            else if (gestureMode == 3) bridge.cancelTouchHud();
             else if (relativeGestureStarted) bridge.endTouchTrackpad();
             activePointer = -1;
             relativeGestureStarted = false;
