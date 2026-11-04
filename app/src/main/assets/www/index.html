@@ -325,6 +325,64 @@ window.arcaneHudPointer = (kind, nx, ny, savedAimX, savedAimY) => {
     localX.toFixed(1) + ',' + localY.toFixed(1) +
     ') focus=' + (document.activeElement === arcanePlayer));
 };
+// A short standalone stereo test to separate SWF/Ruffle source problems
+// from Odin/WebView speaker routing. Does not change Ruffle playback.
+let arcaneSpeakerTestBusy = false;
+window.arcaneSpeakerTest = async () => {
+  if (arcaneSpeakerTestBusy) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    console.warn('ArcaneAudioTest: Web Audio unavailable');
+    return;
+  }
+  arcaneSpeakerTestBusy = true;
+  let ctx;
+  try {
+    ctx = new AudioContextClass();
+    if (typeof ctx.createStereoPanner !== 'function') {
+      console.warn('ArcaneAudioTest: StereoPanner unavailable; test cancelled');
+      return;
+    }
+    await ctx.resume();
+    console.info('ArcaneAudioTest sampleRate=' + ctx.sampleRate +
+      ' outputChannels=' + ctx.destination.channelCount +
+      ' maxChannels=' + ctx.destination.maxChannelCount +
+      ' context=' + ctx.state);
+    const start = ctx.currentTime + 0.12;
+    // Quiet 330 Hz sine: Left, Right, then Both, with short silent gaps.
+    for (const [i, pan] of [-1, 1, 0].entries()) {
+      const t0 = start + i * 0.83;
+      const t1 = t0 + 0.64;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const stereo = ctx.createStereoPanner();
+      osc.type = 'sine';
+      osc.frequency.value = 330;
+      stereo.pan.value = pan;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(0.07, t0 + 0.025);
+      gain.gain.setValueAtTime(0.07, t1 - 0.025);
+      gain.gain.linearRampToValueAtTime(0, t1);
+      osc.connect(gain);
+      gain.connect(stereo);
+      stereo.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t1 + 0.02);
+      console.info('ArcaneAudioTest step=' +
+        ['LEFT', 'RIGHT', 'BOTH'][i] + ' pan=' + pan);
+    }
+    await new Promise(resolve => setTimeout(resolve, 2900));
+    console.info('ArcaneAudioTest complete');
+  } catch (err) {
+    console.warn('ArcaneAudioTest failed: ' + String(err));
+  } finally {
+    if (ctx) {
+      try { await ctx.close(); } catch (err) { /* already closed */ }
+    }
+    arcaneSpeakerTestBusy = false;
+  }
+};
+
 // Pause Flash execution and sound while the options overlay is visible
 // OR Android backgrounds the activity. Either reason independently keeps
 // Ruffle paused, so returning to the app never resumes an open pause menu.
