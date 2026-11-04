@@ -134,61 +134,103 @@ final class TouchControlsOverlay extends FrameLayout {
     }
 
     private final class AimSurface extends View {
+        // The Flash game does not expose its inventory/arena state to the
+        // Android wrapper. In user-selected Relative mode, treat a short tap
+        // as a direct menu click while a swipe or hold operates the existing
+        // relative crosshair. This avoids relying on an unreliable timer
+        // guessing when an arena begins.
+        private static final long HOLD_TO_RELATIVE_MS = 260L;
         private int activePointer = -1;
-        private float lastX, lastY;
+        private float lastX, lastY, downX, downY;
+        private boolean relativeGestureStarted;
+        private final Runnable holdToRelative = () -> {
+            if (activePointer != -1 && relativeAim && !relativeGestureStarted) {
+                relativeGestureStarted = true;
+                bridge.beginTouchTrackpad();
+            }
+        };
 
         AimSurface(Context context) {
             super(context);
             setClickable(true);
             setContentDescription(relativeAim ?
-                "Swipe anywhere to aim; touch or hold to fire" :
-                "Tap or drag anywhere to aim and fire while moving");
+                "Tap to select menus; swipe or hold to aim and fire" :
+                "Tap or drag to aim directly and fire");
         }
 
         void reset() {
+            removeCallbacks(holdToRelative);
             if (activePointer == -1) return;
             activePointer = -1;
-            if (relativeAim) bridge.endTouchTrackpad();
-            else bridge.endTouchDirect();
-            invalidate();
+            if (relativeAim) {
+                if (relativeGestureStarted) bridge.endTouchTrackpad();
+            } else {
+                bridge.endTouchDirect();
+            }
+            relativeGestureStarted = false;
+        }
+
+        private void finish(boolean commitTap, float x, float y) {
+            removeCallbacks(holdToRelative);
+            if (activePointer < 0) return;
+            if (relativeAim) {
+                if (relativeGestureStarted) bridge.endTouchTrackpad();
+                else if (commitTap) bridge.tapTouchDirect(x, y);
+            } else {
+                bridge.endTouchDirect();
+            }
+            activePointer = -1;
+            relativeGestureStarted = false;
         }
 
         @Override public boolean onTouchEvent(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     activePointer = event.getPointerId(0);
-                    lastX = event.getX(0);
-                    lastY = event.getY(0);
-                    if (relativeAim) bridge.beginTouchTrackpad();
+                    downX = lastX = event.getX(0);
+                    downY = lastY = event.getY(0);
+                    relativeGestureStarted = false;
+                    if (relativeAim) postDelayed(holdToRelative, HOLD_TO_RELATIVE_MS);
                     else bridge.beginTouchDirect(lastX, lastY);
-                    invalidate();
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     if (activePointer >= 0) {
                         int index = event.findPointerIndex(activePointer);
                         if (index >= 0) {
                             float x = event.getX(index), y = event.getY(index);
-                            if (relativeAim) bridge.moveTouchTrackpad(x - lastX, y - lastY);
-                            else bridge.moveTouchDirect(x, y);
+                            if (relativeAim) {
+                                if (!relativeGestureStarted &&
+                                    Math.hypot(x - downX, y - downY) >= dp(11)) {
+                                    removeCallbacks(holdToRelative);
+                                    relativeGestureStarted = true;
+                                    bridge.beginTouchTrackpad();
+                                }
+                                if (relativeGestureStarted)
+                                    bridge.moveTouchTrackpad(x - lastX, y - lastY);
+                            } else {
+                                bridge.moveTouchDirect(x, y);
+                            }
                             lastX = x;
                             lastY = y;
                         }
                     }
                     return true;
                 case MotionEvent.ACTION_POINTER_UP:
-                    if (activePointer == event.getPointerId(event.getActionIndex()))
-                        reset();
+                    if (activePointer == event.getPointerId(event.getActionIndex())) {
+                        int index = event.getActionIndex();
+                        finish(true, event.getX(index), event.getY(index));
+                    }
                     return true;
                 case MotionEvent.ACTION_UP:
+                    finish(true, event.getX(0), event.getY(0));
+                    return true;
                 case MotionEvent.ACTION_CANCEL:
                     reset();
                     return true;
-                default: return true;
+                default:
+                    return true;
             }
         }
-
-        // No onDraw: relative aiming has no visible zone or border.
-        // Moving and firing works in the entire unobstructed game view.
     }
 
     private final class DirectionPad extends View {
