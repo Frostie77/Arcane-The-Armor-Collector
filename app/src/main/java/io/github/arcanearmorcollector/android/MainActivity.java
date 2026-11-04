@@ -2,6 +2,8 @@ package io.github.arcanearmorcollector.android;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.content.Intent;
+import android.net.Uri;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -11,6 +13,7 @@ import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.widget.FrameLayout;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -37,10 +40,16 @@ import android.webkit.JavascriptInterface;
 import androidx.webkit.WebViewAssetLoader;
 
 import java.io.IOException;
+import java.io.FileInputStream;
 import java.io.InputStream;
 
 public class MainActivity extends Activity {
     private WebView gameView;
+    private boolean gameImported, importBusy;
+    private FrameLayout importOverlay;
+    private TextView importStatus;
+    private Button importButton;
+    private static final int REQUEST_GAME_DOCUMENT = 814;
     private GamepadBridge gamepad;
     private boolean backgrounded;
     private volatile Thread speakerTestThread;
@@ -113,18 +122,27 @@ public class MainActivity extends Activity {
         invertMoveY = prefs.getBoolean("invert_move_y", false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setImmersive();
+        gameImported = ArcaneGameImport.hasImportedGame(this) || hasBundledGame();
 
         WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", path -> {
                 if (path.contains("..") || path.startsWith("/")) return null;
                 try {
-                    InputStream in = getAssets().open("www/" + path);
+                    InputStream in;
                     if ("arcane.swf".equals(path)) {
+                        // Installed, user-selected SWF has priority. The old
+                        // packaged asset is kept only for private debug builds.
+                        if (ArcaneGameImport.hasImportedGame(this))
+                            in = new FileInputStream(ArcaneGameImport.installedFile(this));
+                        else
+                            in = getAssets().open("www/arcane.swf");
                         byte[] instrumented;
                         try (InputStream original = in) {
                             instrumented = ArcaneSceneMarker.patch(original);
                         }
                         in = new java.io.ByteArrayInputStream(instrumented);
+                    } else {
+                        in = getAssets().open("www/" + path);
                     }
                     String mime = "application/octet-stream";
                     if (path.endsWith(".html")) mime = "text/html";
@@ -211,8 +229,129 @@ public class MainActivity extends Activity {
         floatParams.rightMargin = dp(18);
         root.addView(floatingOptionsButton, floatParams);
         setContentView(root);
-        gameView.requestFocus();
-        gameView.loadUrl(ORIGIN + "/assets/index.html");
+        if (gameImported) {
+            gameView.requestFocus();
+            gameView.loadUrl(ORIGIN + "/assets/index.html");
+        } else {
+            floatingOptionsButton.setVisibility(View.GONE);
+            showGameImportPrompt();
+        }
+    }
+
+    private boolean hasBundledGame() {
+        try (InputStream input = getAssets().open("www/arcane.swf")) {
+            return input.read() != -1;
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
+    private void showGameImportPrompt() {
+        if (importOverlay != null) return;
+        importOverlay = new FrameLayout(this);
+        importOverlay.setBackgroundColor(0xFF100D17);
+        importOverlay.setClickable(true);
+        importOverlay.setFocusableInTouchMode(true);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(24), dp(24), dp(24), dp(24));
+        panel.setBackground(roundedBackground(0xFF292135, 0xFFB99A6F, 14));
+
+        TextView heading = new TextView(this);
+        heading.setText("ARCANE: THE ARMOR COLLECTOR");
+        heading.setTextSize(22);
+        heading.setTextColor(0xFFFFD99A);
+        heading.setGravity(Gravity.CENTER);
+        panel.addView(heading, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView detail = new TextView(this);
+        detail.setText("Game file required\\n\\nThis unofficial Android wrapper does not include the original Flash game. Choose your own legally obtained Arcane .swf file. It will be copied into this app's private storage and kept for future launches.");
+        detail.setTextSize(15);
+        detail.setTextColor(0xFFECE7EF);
+        detail.setGravity(Gravity.CENTER);
+        detail.setPadding(0, dp(14), 0, dp(12));
+        panel.addView(detail, new LinearLayout.LayoutParams(-1, -2));
+
+        importStatus = new TextView(this);
+        importStatus.setText("Your existing game progress and settings will not be cleared.");
+        importStatus.setTextSize(13);
+        importStatus.setTextColor(0xFFDBCAAC);
+        importStatus.setGravity(Gravity.CENTER);
+        panel.addView(importStatus, new LinearLayout.LayoutParams(-1, -2));
+
+        importButton = new Button(this);
+        importButton.setText("SELECT GAME FILE");
+        importButton.setContentDescription("Choose Arcane Flash SWF from device storage");
+        importButton.setOnClickListener(v -> beginGameImport());
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(-1, -2);
+        buttonParams.topMargin = dp(14);
+        panel.addView(importButton, buttonParams);
+
+        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
+            Math.min(dp(490), getResources().getDisplayMetrics().widthPixels - dp(32)),
+            -2, Gravity.CENTER);
+        importOverlay.addView(panel, panelParams);
+        root.addView(importOverlay, new FrameLayout.LayoutParams(-1, -1));
+        importButton.requestFocus();
+        refreshTouchControls();
+    }
+
+    private void beginGameImport() {
+        if (importBusy) return;
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("*/*");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivityForResult(picker, REQUEST_GAME_DOCUMENT);
+        } catch (android.content.ActivityNotFoundException ex) {
+            if (importStatus != null)
+                importStatus.setText("No document picker was found on this device.");
+        }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != REQUEST_GAME_DOCUMENT) return;
+        if (result != RESULT_OK || data == null || data.getData() == null) {
+            if (importStatus != null)
+                importStatus.setText("No file imported. Select your game file to continue.");
+            return;
+        }
+        if (importBusy) return;
+        importBusy = true;
+        if (importButton != null) importButton.setEnabled(false);
+        if (importStatus != null) importStatus.setText("Importing game file...");
+        Uri selected = data.getData();
+        new Thread(() -> {
+            String failure = null;
+            try {
+                ArcaneGameImport.importDocument(getApplicationContext(), selected);
+            } catch (IOException | SecurityException ex) {
+                failure = ex.getMessage() == null ? "Unable to read the file." : ex.getMessage();
+            }
+            final String error = failure;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                importBusy = false;
+                if (importButton != null) importButton.setEnabled(true);
+                if (error != null) {
+                    if (importStatus != null) importStatus.setText(error);
+                    return;
+                }
+                gameImported = true;
+                if (importOverlay != null) {
+                    root.removeView(importOverlay);
+                    importOverlay = null;
+                    importStatus = null;
+                    importButton = null;
+                }
+                floatingOptionsButton.setVisibility(View.VISIBLE);
+                refreshTouchControls();
+                gameView.requestFocus();
+                gameView.loadUrl(ORIGIN + "/assets/index.html");
+            });
+        }, "ArcaneGameImport").start();
     }
 
     private final class GameSceneBridge {
@@ -338,7 +477,7 @@ public class MainActivity extends Activity {
 
     private void refreshTouchControls() {
         if (touchControls == null) return;
-        boolean visible = !optionsOpen && !backgrounded &&
+        boolean visible = gameImported && !optionsOpen && !backgrounded &&
             (touchMode == 1 || (touchMode == 0 && !hasGamepad()));
         int visibility = visible ? View.VISIBLE : View.GONE;
         if (touchControls.getVisibility() != visibility)
@@ -1280,6 +1419,17 @@ public class MainActivity extends Activity {
         else if (gamepad != null) gamepad.release();
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (!gameImported) {
+            int code = event.getKeyCode();
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0 &&
+                (code == KeyEvent.KEYCODE_BUTTON_A ||
+                 code == KeyEvent.KEYCODE_DPAD_CENTER ||
+                 code == KeyEvent.KEYCODE_ENTER)) {
+                beginGameImport();
+                return true;
+            }
+            return super.dispatchKeyEvent(event);
+        }
         if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_START &&
             isGamepadKey(event)) {
             if (event.getAction() == KeyEvent.ACTION_DOWN &&
@@ -1304,6 +1454,7 @@ public class MainActivity extends Activity {
         return super.dispatchGenericMotionEvent(event);
     }
     @Override public void onBackPressed() {
+        if (!gameImported) return;
         if (optionsOpen) backOptions();
         else openOptions();
     }
