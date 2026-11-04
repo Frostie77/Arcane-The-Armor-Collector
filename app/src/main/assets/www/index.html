@@ -382,8 +382,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     const player = ruffle.createPlayer();
     arcanePlayer = player;
     // The Android wrapper adds FSCommand scene markers to the local SWF in
-    // memory, without altering it on disk. Frame 20 is arena gameplay,
-    // while the other main timeline frames are menus / equipment / results.
+    // memory, without altering it on disk. Root frames 3-5 and 11-18
+    // report arena phases; fight-end notifications cover the results screen.
     player.onFSCommand = (command, args) => {
       if (command === 'arcaneFightEnd') {
         console.info('ArcaneFightEnd: post-fight Continue/Retry screen');
