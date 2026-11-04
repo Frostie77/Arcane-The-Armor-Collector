@@ -137,8 +137,7 @@ Set-Content -Path (Join-Path $releaseDir 'Arcane-v0.2.0-Android.sha256.txt') -Va
 # Stage a signed-APK-specific update feed for publication AFTER the actual
 # matching GitHub Release and its APK download have been published.
 $sourceSha = (& git rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or $sourceSha -notmatch '^[a-f0-9]{40}
-) {
+if ($LASTEXITCODE -ne 0 -or $sourceSha -notmatch ('^[a-f0-9]{40}' + [char]36)) {
     throw 'Could not identify the release source commit.'
 }
 $feed = [ordered]@{
