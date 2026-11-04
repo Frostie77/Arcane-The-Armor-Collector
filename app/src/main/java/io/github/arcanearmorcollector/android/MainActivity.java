@@ -26,6 +26,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.JavascriptInterface;
 
 import androidx.webkit.WebViewAssetLoader;
 
@@ -58,6 +59,7 @@ public class MainActivity extends Activity {
     private int aimSpeedIndex = 1;
     private int touchMode, touchSizeIndex = 1, touchOpacityIndex = 1, touchInsetIndex = 1;
     private boolean touchSwapped, touchDpad, touchRelativeAim = true;
+    private boolean sceneKnown, sceneArena;
     private static final String[] TOUCH_MOVEMENT = {"Joystick", "D-pad"};
     private static final String[] TOUCH_AIM = {"Relative", "Direct"};
     private int movementMode, movementDeadzoneIndex = 1;
@@ -110,6 +112,13 @@ public class MainActivity extends Activity {
                 if (path.contains("..") || path.startsWith("/")) return null;
                 try {
                     InputStream in = getAssets().open("www/" + path);
+                    if ("arcane.swf".equals(path)) {
+                        byte[] instrumented;
+                        try (InputStream original = in) {
+                            instrumented = ArcaneSceneMarker.patch(original);
+                        }
+                        in = new java.io.ByteArrayInputStream(instrumented);
+                    }
                     String mime = "application/octet-stream";
                     if (path.endsWith(".html")) mime = "text/html";
                     else if (path.endsWith(".js")) mime = "application/javascript";
@@ -153,6 +162,9 @@ public class MainActivity extends Activity {
                 return !ORIGIN.equals(request.getUrl().getScheme() + "://" + request.getUrl().getHost());
             }
         });
+        // The local, trusted SWF uses in-memory FSCommand frame markers to
+        // report arena/menu transitions via Ruffle. No network or file writes.
+        gameView.addJavascriptInterface(new GameSceneBridge(), "ArcaneHost");
         gameView.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onConsoleMessage(ConsoleMessage m) {
                 Log.d("ArcaneRuffle", m.messageLevel() + ": " + m.message());
@@ -194,6 +206,21 @@ public class MainActivity extends Activity {
         setContentView(root);
         gameView.requestFocus();
         gameView.loadUrl(ORIGIN + "/assets/index.html");
+    }
+
+    private final class GameSceneBridge {
+        @JavascriptInterface public void reportPhase(String phase) {
+            if (!"arena".equals(phase) && !"menu".equals(phase)) return;
+            runOnUiThread(() -> {
+                boolean arena = "arena".equals(phase);
+                if (sceneKnown && sceneArena == arena) return;
+                sceneKnown = true;
+                sceneArena = arena;
+                if (touchControls != null) touchControls.setGameScene(true, arena);
+                Log.d("ArcanePhase", "Ruffle scene: " + phase);
+                refreshTouchControls();
+            });
+        }
     }
 
     private int dp(float points) {
@@ -312,8 +339,9 @@ public class MainActivity extends Activity {
         // Direct touch mode should not leave an unrelated controller crosshair
         // sitting over the Flash game. Restore it when relative aiming or
         // physical controller-only play resumes.
-        gamepad.setNativeCursorEnabled(!visible || touchRelativeAim);
-        if (visible && touchRelativeAim) gamepad.showTouchCursor();
+        boolean relativeCombat = touchRelativeAim && (!sceneKnown || sceneArena);
+        gamepad.setNativeCursorEnabled(!visible || relativeCombat);
+        if (visible && relativeCombat) gamepad.showTouchCursor();
     }
 
     private void saveMovementPreferences() {
