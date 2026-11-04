@@ -43,7 +43,7 @@ $iconType = $iconMatch.Groups[2].Value
 $iconName = $iconMatch.Groups[3].Value
 $iconFiles = @(Get-ChildItem -Path $resFolder -Recurse -File |
     Where-Object {
-        $_.Directory.Name -match "^$iconType($|-)" -and
+        $_.Directory.Name -match ('^' + [regex]::Escape($iconType) + '(-|$)') -and
         $_.BaseName -eq $iconName
     })
 if ($iconFiles.Count -eq 0) {
