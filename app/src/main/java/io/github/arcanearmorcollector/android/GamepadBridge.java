@@ -273,6 +273,20 @@ final class GamepadBridge {
         updateMappedButtons();
     }
 
+    void tapTouchDirect(float x, float y) {
+        initializePointer();
+        if (!pointerInitialized || attacking || touchTrackpadAttacking) return;
+        // Click the actual menu coordinates, but restore the relative aim
+        // position so choosing an inventory item does not throw the arena
+        // crosshair into the corner when combat starts.
+        float savedX = pointerX, savedY = pointerY;
+        beginTouchDirect(x, y);
+        endTouchDirect();
+        pointerX = savedX;
+        pointerY = savedY;
+        clampPointer();
+    }
+
     void moveTouchDirect(float x, float y) {
         if (!touchTrackpadAttacking || !pointerInitialized) return;
         pointerX = x;
